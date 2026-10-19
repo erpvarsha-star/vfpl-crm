@@ -189,7 +189,7 @@
     if (/low/.test(t)) return "Low";
     return "";
   }
-  var NOT_LEAD_RE = /\b(bank|banking|loan|insurance|salary|payroll|personal|income tax|gst|tax|credit card|mutual fund|emi|passport|visa|school|college|hospital|clinic|rent|landlord|electricity|recharge)\b/i;
+  var NOT_LEAD_RE = /\b(bank|banking|loan|insurance|salary|payroll|personal|income tax|gst|tax|credit cards?|cards?|mutual fund|emi|passport|visa|hotels?|resort|airlines?|flights?|boarding pass|e-?ticket|school|college|hospital|clinic|rent|landlord|electricity|recharge)\b/i;
   function looksNotLead(d) { return NOT_LEAD_RE.test([d.company, d.contact_name, d.scope].join(" ")); }
 
   /* ---------- the six import formats ---------- */
