@@ -388,7 +388,7 @@
     var userSet = ex.stage_source === "user";
     var stageAfter = ex.stage;
     if (!userSet && !ex.lost && it.stageSource === "rule" && stageIdx(it.stage) > stageIdx(ex.stage)) { plan.advance = true; stageAfter = it.stage; }
-    set("quote_due", effectiveDue(it, stageAfter));
+    if (stageAfter === "Received") set("quote_due", it.due);
     if (plan.advance) { p.stage = it.stage; p.stage_at = it.lastTouch || it.received; p.stage_source = "rule"; }
     if (!userSet && !ex.lost && it.lost) { plan.newLost = true; p.lost = true; p.lost_reason = it.lostReason; }
     plan.changed = Object.keys(p).length > 0;
@@ -555,9 +555,9 @@
   /* ---------- stage moves (each one is logged with today's IST date) ---------- */
   function moveTo(r, to, note) {
     if (r.lost || to === r.stage || STAGES.indexOf(to) === -1) return Promise.resolve({ ok: true });
-    var today = S.todayISO();
+    var today = S.todayISO(), from = r.stage;        // r is the live row: read the old stage before patching
+    var p2 = histCol.insert({ rfq_id: r.id, from: from, to: to, at: today, note: cap(note, 200) });
     var p1 = rfqCol.patch(r.id, { stage: to, stage_at: today, stage_source: "user" });
-    var p2 = histCol.insert({ rfq_id: r.id, from: r.stage, to: to, at: today, note: cap(note, 200) });
     return Promise.all([p1, p2]);
   }
   function focusCard(id, prefer) {
