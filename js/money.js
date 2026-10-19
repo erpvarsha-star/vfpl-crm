@@ -1,5 +1,6 @@
 /* Money: import of the Collections AGING and LIVE_POSITION tabs, per-customer amounts and the stats() contract (design 2.4, 4.5, 5.3).
-   Defines window.CrmMoney = { has, meta, forCustomer, stats, openImport, clear, renderCard }.
+   Defines window.CrmMoney = { has, meta, forCustomer, stats, openImport, openUnmatched, clear, renderCard }.
+   openUnmatched() opens a dialog with the unmatched-names list and the manual match (the Dashboard link "Includes ₹X for N names not in the CRM" should call it).
    renderCard(slotEl) is an additive helper: a complete, self-contained money card (Data as of, stale warning, Hide amounts,
    outstanding, overdue, aging bar with legend, top 5, unmatched names with manual match, Clear). The Dashboard may host it or build its own.
    Pure functions (moneyStats, agingWarnings, buildRows) are also module.exports for Node unit tests.
@@ -454,13 +455,13 @@
     var st = stats(), today = Store.todayISO();
     var head = el("div", { class: "mny-head" }, [el("h2", { text: "Money" })]);
     var actions = el("div", { class: "mny-actions no-print" });
-    var imp = el("button", { type: "button", class: "btn primary", id: "moneyImportBtn", text: st ? "Import more money data" : "Import money data" });
+    var imp = el("button", { type: "button", class: "btn primary", id: "mnyImport", text: st ? "Import more money data" : "Import money data" });
     imp.addEventListener("click", openImport);
-    var hide = el("button", { type: "button", class: "btn", id: "moneyHide", "aria-pressed": String(App.hideAmounts()), text: App.hideAmounts() ? "Show amounts" : "Hide amounts" });
+    var hide = el("button", { type: "button", class: "btn", id: "mnyHide", "aria-pressed": String(App.hideAmounts()), text: App.hideAmounts() ? "Show amounts" : "Hide amounts" });
     hide.addEventListener("click", function () { App.setHideAmounts(!App.hideAmounts()); });
     actions.appendChild(imp); actions.appendChild(hide);
     if (st) {
-      var clr = el("button", { type: "button", class: "btn", id: "moneyClear", text: "Clear imported money data" });
+      var clr = el("button", { type: "button", class: "btn", id: "mnyClear", text: "Clear imported money data" });
       clr.addEventListener("click", function () {
         if (!confirm("Remove all imported amounts from this browser?")) return;
         clear("all").then(function () { App.flush(); App.announce("Imported money data removed."); });
@@ -471,18 +472,18 @@
     card.appendChild(head);
 
     if (!st) {
-      card.appendChild(el("p", { class: "mny-empty", id: "moneyEmpty", text: "No money data yet. Export the AGING and LIVE_POSITION tabs of the VFPL Collections Engine sheet as CSV and import them here. Amounts stay in this browser only and are never saved to git." }));
+      card.appendChild(el("p", { class: "mny-empty", id: "mnyEmpty", text: "No money data yet. Export the AGING and LIVE_POSITION tabs of the VFPL Collections Engine sheet as CSV and import them here. Amounts stay in this browser only and are never saved to git." }));
       slot.appendChild(card);
       return;
     }
-    var asof = el("p", { class: "mny-asof", id: "moneyAsOf" });
+    var asof = el("p", { class: "mny-asof", id: "mnyAsOf" });
     if (st.asOfAging && st.asOfLive && st.asOfAging !== st.asOfLive) {
       asof.textContent = "Data as of " + App.fmt.date(st.asOfAging) + " (aging) and " + App.fmt.date(st.asOfLive) + " (live position)";
     } else asof.textContent = "Data as of " + App.fmt.date(st.asOf);
     card.appendChild(asof);
     if (st.stale) {
       var d = Store.daysBetween(st.asOf, today);
-      card.appendChild(el("p", { class: "mny-stale", id: "moneyStale", role: "status", text: "Money data is " + d + " days old. Import a fresh file." }));
+      card.appendChild(el("p", { class: "mny-stale", id: "mnyStale", role: "status", text: "Money data is " + d + " days old. Import a fresh file." }));
     }
     drawTiles(card, st);
     drawAging(card, st);
@@ -491,9 +492,33 @@
     slot.appendChild(card);
   }
 
+  /* The unmatched-names list on its own, in a dialog: lets the Dashboard (or any tab) link straight to the manual match. */
+  var unmDlg = null, unmBody = null;
+  function drawUnmatchedDialog() {
+    if (!unmBody) return;
+    Ui.clear(unmBody);
+    var st = stats();
+    if (!st) { unmBody.appendChild(el("p", { class: "note", text: "No money data is imported." })); return; }
+    var before = unmBody.childNodes.length;
+    drawUnmatched(unmBody, st);
+    if (unmBody.childNodes.length === before) unmBody.appendChild(el("p", { class: "note", id: "mnyUnmNone", text: "Every name in the imported files is matched to a customer." }));
+  }
+  function openUnmatched() {
+    if (!unmDlg) {
+      unmBody = el("div", { class: "dlg-body", id: "mnyUnmBody" });
+      var close = el("button", { type: "button", class: "btn", id: "mnyUnmClose", text: "Close" });
+      close.addEventListener("click", function () { unmDlg.close(); });
+      unmDlg = el("dialog", { id: "mnyUnmDlg", "aria-labelledby": "mnyUnmTitle" }, [el("div", { class: "dlg-head", id: "mnyUnmTitle", text: "Match names to customers" }), unmBody, el("div", { class: "actions mny-unmfoot" }, close)]);
+      document.body.appendChild(unmDlg);
+    }
+    drawUnmatchedDialog();
+    App.openDialog(unmDlg, document.activeElement);
+  }
+
   function drawAll() {
     cards = cards.filter(function (s) { return s.isConnected; });
     cards.forEach(draw);
+    if (unmDlg && unmDlg.open) drawUnmatchedDialog();
   }
   function renderCard(slot) {
     if (cards.indexOf(slot) === -1) cards.push(slot);
@@ -501,5 +526,5 @@
   }
   App.onData(drawAll);
 
-  window.CrmMoney = { has: has, meta: meta, forCustomer: forCustomer, stats: stats, openImport: openImport, clear: clear, renderCard: renderCard };
+  window.CrmMoney = { has: has, meta: meta, forCustomer: forCustomer, stats: stats, openImport: openImport, openUnmatched: openUnmatched, clear: clear, renderCard: renderCard };
 })();

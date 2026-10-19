@@ -49,3 +49,6 @@
   .mny-leg-n { grid-column: 2 / 4; text-align: left; }
   .mny-actions .btn { flex: 1 1 auto; }
 }
+#mnyUnmDlg { width: min(560px, calc(100vw - 16px)); }
+#mnyUnmDlg .mny-unm { display: grid; gap: 8px; }
+.mny-unmfoot { padding: 0 22px 18px; }

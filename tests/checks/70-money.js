@@ -1,5 +1,5 @@
 // A5 Money checks: AGING and LIVE_POSITION import, per-customer amounts, stats, the money card.
-// Fixtures are built here with made-up amounts. The card is hosted in a test div because the Dashboard (A3) is not part of this branch.
+// Fixtures are built here with made-up amounts. The standalone CrmMoney.renderCard card is hosted in a test div on the body; the real Dashboard money section is checked at the end.
 module.exports = async (t) => {
   const { check, istToday } = t;
   const MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
@@ -37,14 +37,14 @@ module.exports = async (t) => {
   const newCtx = (opts = {}) => t.fresh(Object.assign({ init: (d) => { window.CRM_DATA = d; }, initArg: seed }, opts));
   const host = (page) => page.evaluate(() => {
     let h = document.getElementById('moneyHost');
-    if (!h) { h = document.createElement('div'); h.id = 'moneyHost'; document.getElementById('panel-dash').appendChild(h); }
+    if (!h) { h = document.createElement('div'); h.id = 'moneyHost'; document.body.appendChild(h); }
     CrmMoney.renderCard(h);
   });
   const settle = (page) => page.evaluate(() => App.flush());
   const stats = (page) => page.evaluate(() => CrmMoney.stats());
   const closed = (page) => page.waitForFunction(() => !document.getElementById('importDlg').open);
   async function pick(page, name, text) {
-    await page.click('#moneyImportBtn');
+    await page.click('#mnyImport');
     await page.setInputFiles('#importFile', t.csvFile(name, text));
     await page.waitForSelector('#importSummary li, #importErr:not([hidden])');
   }
@@ -61,7 +61,7 @@ module.exports = async (t) => {
   const { page } = await newCtx();
   await t.open(page);
   await host(page);
-  check('money card shows the empty state before an import', await page.locator('#moneyEmpty').isVisible() && /Amounts stay in this browser only and are never saved to git/.test(await page.locator('#moneyEmpty').innerText()) &&
+  check('money card shows the empty state before an import', await page.locator('#mnyEmpty').isVisible() && /Amounts stay in this browser only and are never saved to git/.test(await page.locator('#mnyEmpty').innerText()) &&
     await page.evaluate(() => CrmMoney.has() === false && CrmMoney.stats() === null && CrmMoney.forCustomer('zf-steering-gear-india-ltd') === null));
 
   // ---------- AGING ----------
@@ -82,7 +82,7 @@ module.exports = async (t) => {
   const nr = rows.find(r => r.sourceName === 'NR INDUSTRIES'), zf = rows.find(r => r.sourceName.startsWith('ZF'));
   check('amounts like "1,234,567", "-2,500" and "0" parse', nr.erpTotal === 1234567 && nr.overdue === -2500 && nr.erpNotDue === 0 && zf.creditBalance === 0 && zf.erpTotal === 1500000 && nr.termsDays === null && zf.termsDays === 45, JSON.stringify(nr));
   check('total rows are not stored', rows.length === 5 && !rows.some(r => /^total/i.test(r.sourceName)));
-  check('"Data as of" shows the newest As On date on the card', (await page.locator('#moneyAsOf').innerText()) === 'Data as of ' + human(NEW), await page.locator('#moneyAsOf').innerText());
+  check('"Data as of" shows the newest As On date on the card', (await page.locator('#mnyAsOf').innerText()) === 'Data as of ' + human(NEW), await page.locator('#mnyAsOf').innerText());
   check('with AGING only the card says to import LIVE_POSITION for outstanding', st1.outstanding === null && st1.overdue === OVERDUE_TOTAL && /Import the LIVE_POSITION tab/.test(await page.locator('.mny-tiles').innerText()));
 
   // ---------- LIVE_POSITION ----------
@@ -164,17 +164,17 @@ module.exports = async (t) => {
   await host(page);
   const before = await page.locator('#moneyHost').innerText();
   check('amounts show as numbers before hiding', /₹\d/.test(before));
-  await page.click('#moneyHide');
+  await page.click('#mnyHide');
   await settle(page);
   const hidden = await page.locator('#moneyHost').innerText();
-  check('Hide amounts masks every amount on the money card', !/₹\s?\d/.test(hidden) && hidden.includes('₹ •••') && (await page.getAttribute('#moneyHide', 'aria-pressed')) === 'true' && await page.evaluate(() => document.body.classList.contains('amounts-hidden')), hidden.slice(0, 300));
+  check('Hide amounts masks every amount on the money card', !/₹\s?\d/.test(hidden) && hidden.includes('₹ •••') && (await page.getAttribute('#mnyHide', 'aria-pressed')) === 'true' && await page.evaluate(() => document.body.classList.contains('amounts-hidden')), hidden.slice(0, 300));
   await page.emulateMedia({ media: 'print' });
   check('Hide amounts also covers print', !/₹\s?\d/.test(await page.locator('#moneyHost').innerText()));
   await page.emulateMedia({ media: 'screen' });
   await t.reload(page);
   await host(page);
-  check('Hide amounts survives a refresh', !/₹\s?\d/.test(await page.locator('#moneyHost').innerText()) && (await page.locator('#moneyHide').innerText()) === 'Show amounts');
-  await page.click('#moneyHide');
+  check('Hide amounts survives a refresh', !/₹\s?\d/.test(await page.locator('#moneyHost').innerText()) && (await page.locator('#mnyHide').innerText()) === 'Show amounts');
+  await page.click('#mnyHide');
   await settle(page);
   check('Show amounts brings the numbers back', /₹\d/.test(await page.locator('#moneyHost').innerText()));
 
@@ -183,25 +183,25 @@ module.exports = async (t) => {
   await t.reload(page);
   await host(page);
   const afterStats = await stats(page);
-  check('amounts survive a refresh', JSON.stringify(beforeStats) === JSON.stringify(afterStats) && afterStats.outstanding === OUTSTANDING_TOTAL && (await page.locator('#moneyAsOf').innerText()).startsWith('Data as of'), JSON.stringify(afterStats).slice(0, 200));
+  check('amounts survive a refresh', JSON.stringify(beforeStats) === JSON.stringify(afterStats) && afterStats.outstanding === OUTSTANDING_TOTAL && (await page.locator('#mnyAsOf').innerText()).startsWith('Data as of'), JSON.stringify(afterStats).slice(0, 200));
   check('the manual matches survive a refresh', (await page.evaluate(() => CrmMoney.forCustomer('s-k-traders').overdue)) === 10000);
 
   // ---------- Data as of / stale ----------
   const fresh12 = istToday(-12);
   await doImport(page, 'aging3.csv', aging, { asOf: fresh12 });
-  const asofText = await page.locator('#moneyAsOf').innerText();
+  const asofText = await page.locator('#mnyAsOf').innerText();
   check('"Data as of" shows the chosen date', asofText.includes(human(fresh12)), asofText);
-  const stale = await page.locator('#moneyStale').evaluate(e => ({ text: e.innerText, color: getComputedStyle(e).color }));
+  const stale = await page.locator('#mnyStale').evaluate(e => ({ text: e.innerText, color: getComputedStyle(e).color }));
   check('stale data shows the orange warning', stale.text === 'Money data is 12 days old. Import a fresh file.' && stale.color === 'rgb(180, 83, 9)', JSON.stringify(stale));
   check('stale data keeps the totals visible', /₹/.test(await page.locator('.mny-tiles').innerText()) && (await stats(page)).stale === true);
   await t.reload(page);
   await host(page);
-  check('the chosen Data as of date survives a refresh', (await page.locator('#moneyAsOf').innerText()).includes(human(fresh12)));
+  check('the chosen Data as of date survives a refresh', (await page.locator('#mnyAsOf').innerText()).includes(human(fresh12)));
 
   // ---------- clear ----------
   page.once('dialog', d => d.accept());
-  await page.click('#moneyClear');
-  await page.waitForSelector('#moneyEmpty');
+  await page.click('#mnyClear');
+  await page.waitForSelector('#mnyEmpty');
   check('Clear imported money data removes it', await page.evaluate(() => CrmMoney.has() === false && CrmMoney.stats() === null && localStorage.getItem('varsha-crm-money-v1') === null));
   await t.reload(page);
   check('cleared money stays cleared after a refresh', await page.evaluate(() => CrmMoney.has() === false));
@@ -250,9 +250,93 @@ module.exports = async (t) => {
   await doImport(ph.page, 'live.csv', live);
   const dims = await ph.page.evaluate(() => ({ page: document.documentElement.scrollWidth, card: document.querySelector('.mny-card').getBoundingClientRect().right }));
   check('no sideways scroll on the money card at 375px', dims.page === 375 && dims.card <= 375, JSON.stringify(dims));
-  await ph.page.click('#moneyImportBtn');
+  await ph.page.click('#mnyImport');
   await ph.page.setInputFiles('#importFile', t.csvFile('off.csv', off));
   await ph.page.waitForSelector('#importWarn:not([hidden])');
   const dims2 = await ph.page.evaluate(() => { const d = document.getElementById('importDlg').getBoundingClientRect(); return { page: document.documentElement.scrollWidth, left: d.left, right: d.right }; });
   check('no sideways scroll with the money import dialog open at 375px', dims2.page === 375 && dims2.left >= 0 && dims2.right <= 375, JSON.stringify(dims2));
 };
+
+// ---------- end to end with the REAL Dashboard (A3): import, numbers, clickable numbers, unmatched names ----------
+module.exports = (function (prev) {
+  return async (t) => {
+    await prev(t);
+    const { check, istToday } = t;
+    const MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    const asOnText = (iso) => { const [y, m, d] = iso.split('-'); return d + '-' + MON[+m - 1] + '-' + y.slice(2); };
+    const NEW = istToday(-2);
+    const AGING_HEAD = 'Customer,Printed Terms Days,ERP Total,ERP Not Due,ERP Overdue,Model Not Due,1-30,31-60,61-90,>90,Pre April,Credit Balance,Model Overdue,As On';
+    const aging = [AGING_HEAD,
+      'ZF STEERING GEAR (INDIA) LTD,45,"1,500,000","500,000","1,000,000","450,000","100,000","200,000","300,000","250,000","150,000",0,"1,000,000",' + asOnText(NEW),
+      'NR INDUSTRIES,,"1,234,567",0,"-2,500",0,"-2,500",0,0,0,0,"2,500","-2,500",' + asOnText(NEW),
+      'Imaginary Group,30,"1,000,000","400,000","600,000","300,000",0,0,0,"400,000","200,000",0,"600,000",' + asOnText(NEW),
+      'Zeta Imaginary Pvt Ltd,,"10,000",0,"10,000",0,"10,000",0,0,0,0,0,"10,000",' + asOnText(NEW),
+      'VARSHA FORGINGS LTD MARKAL,,"40,000",0,"40,000",0,"40,000",0,0,0,0,0,"40,000",' + asOnText(NEW)].join('\n') + '\n';
+    const live = ['Customer,ERP 15-Oct,Invoices Since,Receipts Since,Estimated Live,As On',
+      'ZF STEERING GEAR (INDIA) LTD,"2,000,000","300,000","100,000","2,200,000",' + asOnText(NEW),
+      'NR INDUSTRIES,"50,000",0,0,"50,000",' + asOnText(NEW),
+      'Imaginary Group,"900,000","10,000","5,000","905,000",' + asOnText(NEW),
+      'Zeta Imaginary Pvt Ltd,"20,000",0,0,"20,000",' + asOnText(NEW),
+      'VARSHA FORGINGS LTD MARKAL,"15,000",0,0,"15,000",' + asOnText(NEW)].join('\n') + '\n';
+    const OVERDUE = 1000000 - 2500 + 600000 + 10000 + 40000, OUT = 2200000 + 50000 + 905000 + 20000 + 15000;
+    const seed = JSON.parse(JSON.stringify(t.data));
+    seed.customers.filter(c => c.name.startsWith('SANGKAJ')).forEach(c => { c.erpGroup = 'Imaginary Group'; });
+    const { page } = await t.fresh({ init: (d) => { window.CRM_DATA = d; }, initArg: seed });
+    await t.open(page);
+    await t.tab(page, 'dash');
+    const closed = () => page.waitForFunction(() => !document.getElementById('importDlg').open);
+    const rowsOnList = async () => { await page.waitForSelector('#panel-list:not([hidden]) #rows tr'); return t.rows(page); };
+    const back = async () => { await t.tab(page, 'dash'); await page.waitForSelector('#dash-money'); };
+
+    check('the real Dashboard shows the money empty state and its import button opens the money import', /No money data yet/.test(await page.locator('#dash-money').innerText()) && (await page.locator('#moneyImportBtn').count()) === 1);
+    for (const [name, text] of [['aging.csv', aging], ['live_position.csv', live]]) {
+      await page.click('#moneyImportBtn');
+      await page.setInputFiles('#importFile', t.csvFile(name, text));
+      await page.waitForSelector('#importSummary li');
+      await page.click('#importOk');
+      await closed();
+      await page.evaluate(() => App.flush());
+    }
+    const short = (n) => page.evaluate((x) => App.fmt.moneyShort(x), n);
+    const tileText = (k) => page.locator('#dash-money [data-tile="' + k + '"] .d-val').innerText();
+    check('after importing both files the Dashboard money tiles show the right totals', (await tileText('outstanding')) === await short(OUT) && (await tileText('overdue-amt')) === await short(OVERDUE) && (await tileText('overdue-pct')) === Math.round(OVERDUE / OUT * 100) + '%');
+    check('the Dashboard money section says Data as of for both files and the legend says "of which before April"', /Data as of .* \(AGING\), .* \(LIVE_POSITION\)/.test(await page.locator('#dash-money .d-foot').innerText()) && /of which before April/.test(await page.locator('#dash-money .d-legend').innerText()));
+
+    await page.click('#dash-money [data-tile="overdue-amt"]');
+    check('the Total overdue number opens Customers with one row per customer that owes overdue (a group counts each member)', (await rowsOnList()) === 4, String(await t.rows(page)));
+    await back();
+    await page.click('#dash-money [data-tile="outstanding"]');
+    check('the Total outstanding number opens Customers with one row per customer that has an outstanding amount', (await rowsOnList()) === 5, String(await t.rows(page)));
+    await back();
+    const legend = await page.locator('#dash-money .d-lg').evaluateAll(l => l.map(e => ({ k: e.dataset.age, n: +e.dataset.n })));
+    const got = [];
+    for (const l of legend) {
+      await page.click('#dash-money .d-lg[data-age="' + l.k + '"]');
+      got.push(l.n === 0 ? 0 : await rowsOnList());
+      await back();
+    }
+    check('each aging legend number opens exactly that many customers', legend.map(l => l.n).join() === '2,1,1,3' && got.join() === '2,1,1,3', JSON.stringify({ legend, got }));
+    await page.locator('#dash-money .d-top5 .d-row').first().click();
+    check('a Top 5 overdue row opens that customer', (await rowsOnList()) === 1 && (await page.locator('#rows tr').first().innerText()).includes('ZF STEERING'));
+    await back();
+
+    // unmatched names: the footer link shows the amount; the manual match is reachable through CrmMoney.openUnmatched()
+    check('the Dashboard footer names the amount for names not in the CRM', /Includes .* for 1 name not in the CRM/.test(await page.locator('#moneyUnmatched').innerText()));
+    check('CrmMoney.openUnmatched exists so the Dashboard footer link can open the manual match', await page.evaluate(() => typeof CrmMoney.openUnmatched === 'function'));
+    await page.evaluate(() => CrmMoney.openUnmatched());
+    check('the unmatched dialog lists the name and offers the customers', await page.locator('#mnyUnmDlg').evaluate(d => d.open) && (await page.locator('#mnyUnmDlg .mny-unmlist li').count()) === 1 && (await page.locator('#mnyUnmDlg .mny-unmname').innerText()) === 'Zeta Imaginary Pvt Ltd');
+    await page.locator('#mnyUnmDlg select').selectOption('s-k-traders');
+    await page.locator('#mnyUnmDlg .mny-unmlist button').click();
+    await page.waitForSelector('#mnyUnmNone');
+    check('a manual match in that dialog is saved, the dialog says everything is matched, and the Dashboard footer drops the link',
+      (await page.evaluate(() => CrmMoney.forCustomer('s-k-traders').overdue)) === 10000 && (await page.locator('#moneyUnmatched').count()) === 0 && (await page.evaluate(() => Store.aliases()['Zeta Imaginary Pvt Ltd'])) === 's-k-traders');
+    await page.click('#mnyUnmClose');
+    await t.reload(page);
+    await t.tab(page, 'dash');
+    check('the match and the Dashboard numbers survive a refresh', (await tileText('overdue-amt')) === await short(OVERDUE) && (await page.locator('#moneyUnmatched').count()) === 0);
+    const ph = await t.fresh({ viewport: { width: 375, height: 700 } });
+    await t.open(ph.page);
+    await ph.page.evaluate(() => CrmMoney.openUnmatched());
+    check('the unmatched dialog fits at 375px', await ph.page.evaluate(() => { const d = document.getElementById('mnyUnmDlg').getBoundingClientRect(); return document.documentElement.scrollWidth <= 375 && d.left >= 0 && d.right <= 375; }));
+  };
+})(module.exports);
