@@ -19,6 +19,7 @@ Independent project. Work only in this repo (`vfpl-crm`). Never touch `vfpl-dash
 - **Opus designs.** Architecture, data model, security and UI specs are written by an Opus agent first.
 - **Sonnet agents build, read and deploy.** Every build, read (repo, sheet, database) and deploy task is done by a Sonnet agent that reports back to the lead.
 - **The lead checks.** The lead briefs each agent fully, then verifies the result (tests, diff, live check) before telling the user it is done. Agents do not push to `main` without the lead's check.
+- **Links at every step:** after each completed step, push and give the user the git links (commit, files) and the live-view link, so they can check it in a browser.
 - **Process per phase:** blueprint, the user's GO, design, build, test, deploy, then a short skill harvest (new gotchas go in the list below).
 
 ## Gotchas (learned the hard way)
