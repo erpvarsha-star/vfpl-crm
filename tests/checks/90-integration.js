@@ -53,8 +53,26 @@ module.exports = async (t) => {
   const flush = (p) => p.evaluate(() => App.flush());
   const closedImport = (p) => p.waitForFunction(() => !document.getElementById('importDlg').open);
   const tabs = async (p) => { for (const id of TABS) { await t.tab(p, id); } };
-  // one download at a time, with a short pause: two downloads started back to back can lose the second one in headless Chromium
-  const dl = async (sel) => { await p.waitForTimeout(350); return t.download(p, sel); };
+  // Chromium silently drops roughly every 11th automatic download that one tab starts (a per-tab limit, whatever the timing), so the
+  // page is replaced by a fresh tab of the same browser context (same storage) after a few downloads. The ticked "Include" boxes are
+  // not stored by design, so they are carried over by hand.
+  const DL_PER_TAB = 5;
+  let tabDownloads = 0, ctxOf = null;
+  async function freshTab() {
+    const ticks = await p.evaluate(() => ['incNotes', 'incContacts', 'incAmounts'].filter(id => { const e = document.getElementById(id); return e && e.checked; }));
+    const np = await ctxOf.newPage();
+    np.on('pageerror', e => errs.push(String(e)));
+    np.on('console', m => { if (m.type() === 'error') errs.push(m.text()); });
+    await np.goto(t.url);
+    await np.waitForSelector('body[data-ready="1"]', { state: 'attached' });
+    await t.tab(np, 'export');
+    for (const id of ticks) await np.check('#' + id);
+    const old = p;
+    p = np;
+    await old.close();
+    tabDownloads = 0;
+  }
+  const dl = async (sel) => { if (tabDownloads >= DL_PER_TAB) await freshTab(); tabDownloads++; return t.download(p, sel); };
   const widthOf = (p) => p.evaluate(() => ({ w: document.documentElement.scrollWidth, vw: innerWidth }));
 
   // =========================================================================================
@@ -84,7 +102,8 @@ module.exports = async (t) => {
   // =========================================================================================
   // 2. import everything through the real dialogs
   // =========================================================================================
-  const p = await open();
+  let p = await open();
+  ctxOf = p.context();
   const importVia = async (opener, name, text, o = {}) => {
     await opener();
     await p.waitForSelector('#importDlg[open]');
@@ -238,7 +257,7 @@ module.exports = async (t) => {
   check('default exports carry no email, contact reference, note text or amount', leaked.length === 0, leaked.join());
   const cj = JSON.parse(files[4]);
   check('customers.json from the integrated app has exactly the documented keys and no private data', cj.customers.length === real.cust && cj.customers.every(c => Object.keys(c).join() === 'id,name,contact,contactFrom,city,state,phone,last,followUp,status,disputed,group,segment,vehicleSegment,plants,relatedParty,erpGroup'));
-  await t.reload(p);                       // a fresh page: the browser limits how many automatic downloads one page may start
+  await t.reload(p);
   await t.tab(p, 'export');
   await p.check('#incNotes'); await p.check('#incContacts'); await p.check('#incAmounts');
   const full = [(await dl('#csvBtn')).text, (await dl('#leadCsvBtn')).text, (await dl('#rfqCsvBtn')).text, (await dl('#backup')).text, (await dl('#export')).text];

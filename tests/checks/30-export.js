@@ -62,10 +62,35 @@ module.exports = async (t) => {
 
   const open = async (opts) => { const c = await t.fresh(opts); await t.open(c.page); return c; };
   const goExport = async (page) => { await t.tab(page, 'export'); await page.waitForSelector('#dataCard'); };
-  const dl = (page, sel) => t.download(page, sel);
+  // Chromium silently drops roughly every 11th automatic download that one tab starts (a per-tab limit, whatever the timing), so the
+  // download-heavy page is replaced by a fresh tab of the same browser context (same storage) after a few downloads. The three
+  // "Include" boxes are not stored by design, so their ticks are carried over by hand.
+  const DL_PER_TAB = 5;
+  let tabDownloads = 0;
+  async function freshTab() {
+    const ticks = await page.evaluate(() => ['incNotes', 'incContacts', 'incAmounts'].filter(id => { const e = document.getElementById(id); return e && e.checked; }));
+    const np = await ctx.newPage();
+    np.on('pageerror', e => t.errors.push(String(e)));
+    np.on('console', m => { if (m.type() === 'error') t.errors.push(m.text()); });
+    await np.goto(t.url);
+    await np.waitForSelector('body[data-ready="1"]', { state: 'attached' });
+    await t.tab(np, 'export');
+    await np.waitForSelector('#dataCard');
+    for (const id of ticks) await np.check('#' + id);
+    const old = page;
+    page = np;
+    await old.close();
+    tabDownloads = 0;
+  }
+  const dl = async (pg, sel) => {
+    if (pg === page) { if (tabDownloads >= DL_PER_TAB) await freshTab(); tabDownloads++; return t.download(page, sel); }
+    return t.download(pg, sel);
+  };
 
   // =========================================================================================
-  const { ctx, page } = await open();
+  const first = await open();
+  const ctx = first.ctx;
+  let page = first.page;
   await ctx.grantPermissions(['clipboard-read', 'clipboard-write'], { origin: t.url.replace(/\/$/, '') });
   await goExport(page);
 
