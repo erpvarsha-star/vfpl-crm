@@ -1,116 +1,108 @@
 # Varsha CRM - Phase 2 design
 
-Date: 19 Oct 2026, 04:46 IST. Author: Opus design agent. Status: ready for the lead's review.
+Date: 19 Oct 2026, 04:46 IST (revised the same day for scope updates 1 and 2). Author: Opus design agent. Status: ready for the lead's review.
 
-**Two stages.**
-- **Stage A (build now): a working HTML prototype** on GitHub Pages using browser storage only, for the user to review. It covers the tabs (Dashboard, Customers, Export), the logo, Mark done (P2-A), Notes and call log (P2-B), Edit customer (P2-C), the Export tab (P2-E) and the Dashboard (P2-F). **No Supabase calls, no login, no keys in stage A.**
-- **Stage B (only after the user's GO on stage A): Supabase.** Private Postgres, Auth, RLS and allowlist, and the same `Store` API backed by the database. The Telegram reminder hook is in stage B, design only.
+**Two stages**
+- **Stage A, build now: a working HTML prototype.** Browser storage only, hosted on GitHub Pages, for the user to review. **No Supabase calls, no login, no keys, no real amounts in git.**
+  - Tabs: **Dashboard · Customers · RFQs · Schedule · Export**. The tab persists across refresh.
+  - Features: Mark done (P2-A), Notes and call log (P2-B), Edit customer (P2-C), Export (P2-E), Dashboard (P2-F), Money import (P2-G), RFQ pipeline (P2-H), Schedule: orders and visits (P2-I), Released parts (P2-J), and the logo.
+- **Stage B, only after the user's GO on stage A:** Supabase (Postgres, Auth, RLS, allowlist) behind the same `Store` API. The Telegram 11:00 IST reminder is designed as a hook only.
 
-Words used here:
-- **IST today** = `new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" })`, the existing `todayISO()`. In SQL it is `private.ist_today()`.
-- **localdb** = the browser "database" in localStorage key `varsha-crm-localdb-v1` (stage A).
-- **Store** = the one data module (`store.js`) the UI talks to. In stage A it is backed by localdb; in stage B by Supabase. The UI does not change between stages.
+Terms
+- **IST today** = `new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" })`. Every "overdue", "late" and "today" uses it.
+- **localdb** = localStorage `varsha-crm-localdb-v1`, the stage A "database".
+- **Store** = `js/store.js`, the only data layer. Panels never touch localStorage directly, except for their own view slice through `App.view()`.
+- **Amounts** = money from the Collections sheet (outstanding, overdue, aging) and RFQ quoted values. They are private: never in git and never in `customers.json`.
 
 ---
 
 ## 0. Key decisions
 
-1. **The `Store` interface comes first.** Stage A builds the full Promise-based `Store` API on a `LocalBackend` with the same rows and column names as the stage B database. Stage B adds `SupabaseBackend`, a write queue and login behind the same API, with no UI rewrite.
-2. **Stable id.** Every customer gets a text slug `id` from its name at creation, and it never changes. Rename changes `name` only. Follow-ups, status and notes are keyed by `id`. Phase 1 edits keyed by NAME are migrated once on first load.
-3. **Three tabs: Dashboard (first and default), Customers, Export.** The chosen tab persists across refresh. Each tab panel is rendered by its own file, so Sonnet agents can build them in parallel without touching the same file.
-4. **The Dashboard is read-only and every number is a button.** Clicking a number opens the Customers tab with the exact matching filter, and the row count equals the number clicked. Charts are CSS bars, with no libraries.
-5. **Notes never reach git.** The `customers.json` export never has notes. Notes leave the browser only in "Download backup (with notes)", or in CSV and copy when the user ticks "Include notes text". Backup and CSV file names are gitignored.
-6. **Stage B security is RLS plus an allowlist, not secrecy.** Only the publishable or anon key goes in a committed `config.js`. Everything is revoked from `anon`. Policies need `private.is_allowed()`: the JWT email is in `allowed_users` and the user is confirmed. Sign-ups are off.
-7. **Mark done is one atomic operation** (stage A: one localdb write; stage B: the `public.mark_done` RPC, idempotent by a client UUID).
-8. **The inline script moves to `app.js`**, so a strict CSP is possible (`script-src 'self'`). Stage B adds the pinned supabase-js from jsDelivr with SRI.
+1. **The page is split into plain files** under `css/` and `js/` with ordinary `<script defer>` tags and no build step. Each Sonnet agent owns whole files, so several agents build in parallel. A1 does the split.
+2. **One `Store` with collections.** Customers and the call log have rich methods. RFQs, RFQ history, visits and orders use one generic collection API. Money and aliases use a document API. Stage B swaps the backend without touching the UI.
+3. **Stable ids.** Customers have a slug id from their name, never changed on rename. Everything links by `customer_id`. Phase 1 edits keyed by NAME are migrated once.
+4. **Imports are parsed in the browser and stored in this browser only.** One shared import dialog (`js/importer.js`) is used by Money (AGING, LIVE_POSITION), RFQs and Orders:
+   - header-name matching with synonyms, and a clear mismatch error;
+   - strict number and date parsing;
+   - customer matching by name, plus an unmatched list with remembered manual matches.
+5. **Amounts never reach git.** They are kept in localStorage, excluded from `customers.json` and from the backup, shown with a "Data as of" label, and can be hidden on screen and in print with one toggle. `*.csv` is gitignored. Tests only use made-up amounts built inside the test.
+6. **The Dashboard is read-only and every number is a button** that opens the matching tab with the matching filter; the row count equals the number. Charts are CSS bars only. The dashboard reads each module's `stats()` contract, so it is built in parallel with the modules.
+7. **RFQ pipeline**, 7 stages in this order: Received, Quoted, Negotiated, Finalised, PO, Sample, PPAP. Every stage change is logged with a date. "Released parts" = RFQs at Finalised or later (assumption, to confirm at review).
+8. **Red rule everywhere:** overdue follow-ups, overdue amounts, late orders, overdue quotes, missed visits and overdue next actions are red **and** say so in words. Due today is orange and says so.
 
 ---
 
-## 1. Architecture
+## 1. Architecture and file layout
 
-### 1.1 Stage A (prototype, now)
-
-```
- Browser (GitHub Pages, public static files, no build step)
- ┌──────────────────────────────────────────────────────────────────────┐
- │ index.html     markup (header+logo, tabs, Customers panel, dialogs), │
- │                base CSS tokens, CSP meta                             │
- │ store.js       Store API  ── LocalBackend (localStorage "localdb")   │
- │                shared pure helpers: fuKind, lastBucket, slug, ...    │
- │ app.js         Customers tab, dialogs (Done, Notes, Edit/Add), tabs, │
- │                filters, window.App contract                          │
- │ export.js      Export tab (renders #panel-export) + CSV/TSV builders │
- │ dashboard.js   Dashboard tab (renders #panel-dash) + stats compute   │
- │ export.css, dashboard.css   tab-specific styles                      │
- │ assets/        varsha-logo.jpg, favicon-64.png                       │
- │ customers.json seed (42 customers, no notes)                         │
- │ localStorage:  varsha-crm-localdb-v1 (customers + call log),         │
- │                varsha-crm-view-v1 (tab, filters, search, sort, ...)  │
- └──────────────────────────────────────────────────────────────────────┘
- Data stays in the one browser it was typed in, as in Phase 1.
- Share via Export -> customers.json (git-safe) or the backup file (private).
-```
-
-### 1.2 Stage B (after GO)
+### 1.1 Stage A
 
 ```
- Browser: same files + config.js { supabaseUrl, supabaseKey } (public on purpose)
-          store.js gains SupabaseBackend + write queue + cache + auth
-          localStorage: session token, cache, queue, view state
-                 │ HTTPS (apikey + user JWT)
- Supabase (free, ap-south-1)
-   Auth: email+password, sign-ups OFF, confirm email ON
-   PostgREST: customers, call_log, rpc mark_done, rpc am_i_allowed
-   RLS on every table -> private.is_allowed() (allowlist + confirmed)
-   allowed_users: RLS on, no policies, no grants (invisible to the API)
-   v_followups_due (service_role only) -> Telegram 11:00 IST (later)
- git (public): code, config.js (public key), customers.json (seed), SQL.
- NEVER in git: notes, backups, CSVs, service_role key.
+ Browser (GitHub Pages, static, no build step)
+ ┌──────────────────────────────────────────────────────────────────────────────┐
+ │ index.html          shell: header+logo, tablist, 5 empty panels, banners,    │
+ │                     #live region, CSP meta, <link>/<script> tags             │
+ │ css/base.css        tokens, reset, header, tabs, buttons, chips, banners,    │
+ │                     dialogs, table->card layout, print basics                │
+ │ js/store.js         Store: customers + call log + collections + docs,        │
+ │                     LocalBackend, migration, customer matching, helpers      │
+ │ js/csv.js           CSV parse/build, amount/date/int parsing, header match   │
+ │ js/ui.js            el()/text helpers, formatters (dates, ₹), dialog helper  │
+ │ js/importer.js      shared Import dialog (file -> headers -> match -> confirm)│
+ │ js/app.js           tabs/router, panel registry, view state, banners, boot   │
+ │ js/customers.js     Customers tab + Done / Notes / Edit / Add dialogs        │
+ │ js/money.js         Money import (AGING, LIVE_POSITION), per-customer amounts│
+ │ js/rfqs.js          RFQs tab: board + table, RFQ dialog, RFQ import          │
+ │ js/schedule.js      Schedule tab: Visits & calls calendar, Orders & dispatch │
+ │ js/dashboard.js     Dashboard tab (reads every module's stats())             │
+ │ js/export.js        Export tab                                               │
+ │ css/<module>.css    one stylesheet per module above                          │
+ │ assets/             varsha-logo.jpg (committed), favicon-64.png              │
+ │ customers.json      seed: 42 customers, no notes, no amounts                 │
+ └──────────────────────────────────────────────────────────────────────────────┘
+ localStorage: varsha-crm-localdb-v1 (customers, call log, rfqs, rfq_history, visits, orders)
+               varsha-crm-money-v1 (amounts)   varsha-crm-aliases-v1 (name -> customer id)
+               varsha-crm-view-v1 (tab + each panel's filters/sort/sub-view)
 ```
 
-**What lives where, and why**
+### 1.2 Load order (index.html, at the end of `<body>`)
 
-| Thing | Stage A | Stage B | Why |
-|---|---|---|---|
-| Customers + call log | localdb (this browser) | Supabase Postgres | B: one private copy for every device |
-| Who may see data | n/a (own browser) | `allowed_users` | B: open sign-ups or a leaked key reach nothing |
-| URL + key | none | `config.js` (committed) | Safe by design with RLS |
-| View state (tab, filters, search, sort, export scope, dashboard "count from") | `varsha-crm-view-v1` | same | Phase 1 behaviour |
-| Seed | `customers.json` | `customers.json` -> `scripts/make-seed.js` -> SQL | One source |
+```html
+<link rel="icon" type="image/png" sizes="64x64" href="assets/favicon-64.png">
+<link rel="stylesheet" href="css/base.css?v=2">      <!-- then customers, money, rfqs, schedule, dashboard, export .css -->
+...
+<script src="js/store.js?v=2" defer></script>
+<script src="js/csv.js?v=2" defer></script>
+<script src="js/ui.js?v=2" defer></script>
+<script src="js/importer.js?v=2" defer></script>
+<script src="js/app.js?v=2" defer></script>        <!-- defines window.App, does NOT boot yet -->
+<script src="js/customers.js?v=2" defer></script>  <!-- each module calls App.registerPanel(...) -->
+<script src="js/money.js?v=2" defer></script>
+<script src="js/rfqs.js?v=2" defer></script>
+<script src="js/schedule.js?v=2" defer></script>
+<script src="js/dashboard.js?v=2" defer></script>
+<script src="js/export.js?v=2" defer></script>
+<script src="js/boot.js?v=2" defer></script>       <!-- last: App.boot() -->
+```
+- `?v=` defeats GitHub Pages caching; bump it every release.
+- Stage B adds `config.js` before `store.js`.
+- A1 creates **every** file in the table, with stubs for the modules others own (a one-line comment, plus `App.registerPanel` placeholders for the tabs). This avoids 404s and console errors before those modules land.
+
+### 1.3 Stage B (summary; details in §8)
+Same files, plus `config.js` (public URL + publishable key). `store.js` gains a `SupabaseBackend`, a write queue, a cache and auth. Supabase holds every collection as a table with RLS + allowlist. Money can later come straight from the sheet by a read-only server job.
 
 ---
 
 ## 2. Data model
 
-### 2.1 Row shape (identical in localdb and Postgres)
+### 2.1 Customers and call log (rows are the same in localdb and Postgres)
 
-Customer row (snake_case):
-`{ id, name, contact, contact_from, city, state, phone, last_order, follow_up, status, disputed, source, created_at, updated_at, updated_by }`
-- `source` is `"seed"` or `"manual"`.
-- Dates are `YYYY-MM-DD` or `null`. Timestamps are ISO strings.
+Customer row: `{ id, name, contact, contact_from, city, state, phone, last_order, follow_up, status, disputed, source /* seed|manual */, created_at, updated_at, updated_by }`
 
-Log row:
-`{ id /* uuid */, customer_id, at, type, note, done_follow_up, next_follow_up, created_at, created_by }`
-- `type` is one of Call, Visit, Email, Telegram, Note.
-- `note` is at most 500 characters.
+Log row: `{ id /* uuid */, customer_id, at, type /* Call|Visit|Email|Telegram|Note */, note /* ≤500 */, done_follow_up, next_follow_up, created_at, created_by }`
 
-UI objects (camelCase, Phase 1 names kept), mapped in `store.js`:
+UI objects use the Phase 1 camelCase names: `id, name, contact, contactFrom, city, state, phone, last ('' = none), followUp ('' = none), status, disputed, added (source==="manual"), updatedAt, createdAt`. LogEntry: `{ id, customerId, at, type, note, doneFollowUp, nextFollowUp, createdAt }`.
 
-| UI | Row | Rule |
-|---|---|---|
-| `id` | `id` | slug, never changes |
-| `name` `contact` `city` `state` `phone` | same | `''` when empty |
-| `contactFrom` | `contact_from` | becomes `''` when `contact` is edited by hand |
-| `last` | `last_order` | `''` <-> `null` |
-| `followUp` | `follow_up` | `''` <-> `null` |
-| `status` `disputed` | same | |
-| `added` | `source === "manual"` | only these show the remove × |
-| `updatedAt` `createdAt` | `updated_at` `created_at` | exact strings |
-
-LogEntry: `{ id, customerId, at, type, note, doneFollowUp, nextFollowUp, createdAt, createdBy, pending }`. `pending` is always false in stage A.
-
-### 2.2 Slug rule (shared by the browser and the stage B seed script)
-
+**Slug rule** (`Store.slug`, also used by the stage B seed script):
 ```js
 function slug(name, isTaken) {
   var base = String(name || "").normalize("NFKD").replace(/[̀-ͯ]/g, "")
@@ -121,112 +113,936 @@ function slug(name, isTaken) {
   return id;
 }
 ```
-I checked all 42 current names: every slug is unique. Examples: `ZF STEERING GEAR (INDIA) LTD` -> `zf-steering-gear-india-ltd`; `Ziemer GmbH & Co. KG` -> `ziemer-gmbh-and-co-kg`. If an input row already has `id` (a Phase 2 export), that id is used as given.
+I checked all 42 current names: every slug is unique. Example: `ZF STEERING GEAR (INDIA) LTD` -> `zf-steering-gear-india-ltd`. An input row that already has `id` keeps it.
 
-`store.js` guards every `window`/`document` access and ends with `if (typeof module !== "undefined") module.exports = { slug: slug, fuKind: fuKind, lastBucket: lastBucket, addDays: addDays, dayNum: dayNum };`, so Node scripts and unit tests can `require` it.
+### 2.2 localdb `varsha-crm-localdb-v1`
 
-### 2.3 localdb (stage A): `varsha-crm-localdb-v1`
+```
+{ v: 1,
+  customers: Row[], log: Row[], deleted: string[],          // as above
+  rfqs: RfqRow[], rfq_history: RfqHistRow[],                 // §2.5
+  visits: VisitRow[],                                        // §2.6
+  orders: OrderRow[], orders_meta: ImportMeta | null }       // §2.6 (replaced by each import)
+```
+Seeding on every load, from `window.CRM_DATA` or `fetch("customers.json",{cache:"no-store"})`:
+- Insert seed customers that are missing and not `deleted`.
+- Refresh seed rows that were never edited (`updated_at === created_at`) from the file.
+- Rules:
+  - Unique `lower(name)`.
+  - Only `manual` customers can be removed, and only when **no RFQ, visit or order references them**. Otherwise: "Remove its RFQs and visits first (3)." Removing one deletes its log rows.
+  - Patches set `updated_at`.
 
-`{ v: 1, customers: Row[], log: Row[], deleted: string[] /* ids of removed customers */ }`
+### 2.3 Phase 1 migration (keyed by NAME), once per browser
 
-Seeding on every load, from `window.CRM_DATA` or `fetch("customers.json", {cache:"no-store"})`:
-- A seed customer whose id is not in localdb and not in `deleted` is inserted with `source:"seed"` and `created_at === updated_at`.
-- A seed customer already in localdb **that was never edited** (`updated_at === created_at`) gets its fields refreshed from the file. This keeps the Phase 1 behaviour where a committed `customers.json` change shows up.
-- Edited rows keep the browser's values.
-
-Rules (the same ones Postgres enforces in stage B):
-- Unique `lower(name)`.
-- Only `source:"manual"` rows can be removed. Removing one deletes its log rows, and its id goes into `deleted`.
-- A patch sets `updated_at = new Date().toISOString()`.
-- `mark_done` = in one write: insert a log row with `done_follow_up = old follow_up`, then set `follow_up = next` (or null).
-
-### 2.4 Moving Phase 1 edits (keyed by NAME) to ids, once per browser
-
-Runs in `Store.load()` after seeding (stage A), or after the first server fetch (stage B):
 ```
 legacy = JSON.parse(localStorage["varsha-crm-local-v2"])   // {added:[], status:{name:v}, follow:{name:v}}
 if (!legacy || localStorage["varsha-crm-legacy-done-v1"]) return
-find(name) = row with name === name, else lower(name) === lower(name), else id === slug(name)
-for [name, v] in legacy.status: r = find(name)
-   r && r.status !== v && r.updatedAt === r.createdAt -> setStatus(r.id, v); moved++
-   else if r && r.status !== v                        -> skipped++  (already edited since)
-for [name, v] in legacy.follow: same rule with followUp
-for a in legacy.added: !find(a.name) -> addCustomer(a); moved++   else skipped++
-localStorage["varsha-crm-local-v2-backup"] = raw;  remove "varsha-crm-local-v2"
-localStorage["varsha-crm-legacy-done-v1"] = "1"
-notice: "Moved 3 changes saved by the old version of this page." (+ " 1 was skipped because a newer value exists.")
+find(name) = exact name, else lower(name), else id === slug(name)
+status/follow: apply when found, different, and the row was never edited (updatedAt === createdAt); else skipped++
+added: addCustomer(a) when not found; else skipped++
+keep raw in "varsha-crm-local-v2-backup"; remove "varsha-crm-local-v2"; set "varsha-crm-legacy-done-v1" = "1"
+notice: "Moved 3 changes saved by the old version of this page." (+ " 1 skipped because a newer value exists.")
 ```
-In stage A every row is fresh, so all Phase 1 edits move. The `updatedAt === createdAt` guard matters in stage B, where a second device must not overwrite newer database values.
 
-### 2.5 Stage B: Postgres migration `supabase/migrations/20261019000100_phase2.sql` (copy as is)
+### 2.4 Money `varsha-crm-money-v1` (a document, never exported, never in the backup)
+
+```
+{ v: 1,
+  aging: { meta: ImportMeta, rows: [{ sourceName, customerId /* or null */, b1_30, b31_60, b61_90, b90, overdue }] } | null,
+  live:  { meta: ImportMeta, rows: [{ sourceName, customerId /* or null */, outstanding, overdue /* or null */ }] } | null }
+ImportMeta = { fileName, fileDate /* ISO from File.lastModified */, asOf /* YYYY-MM-DD, user-editable, default = file date in IST */,
+               importedAt /* ISO */, rowsRead, rowsKept, skipped: [{row, reason}], unmatched: n }
+```
+- `overdue` (AGING) = the file's overdue column if present, otherwise `b1_30 + b31_60 + b61_90 + b90`.
+- **Totals use every row** (matched or not). **Per-customer amounts use matched rows only.** Rows for the same customer are added together, and the preview reports how many.
+- Source rule (assumption; Open Question 1):
+  - **outstanding** comes from LIVE_POSITION;
+  - **overdue and aging buckets** come from AGING;
+  - with only one file imported, show what that file has and an "Import <other tab> to see <x>" hint;
+  - if LIVE_POSITION has its own overdue column and AGING is missing, use it.
+
+### 2.5 RFQs (assumed fields; to confirm when the RFQ sheet arrives)
+
+```
+RfqRow = { id /* uuid */, customer_id /* or null */, customer_name /* raw text, kept when no match */,
+           rfq_no, part_name, part_no, qty /* int or null */, received, quote_due, quoted_value /* ₹ number or null */,
+           stage, stage_at /* date the current stage started */, next_action /* date or null */, notes /* ≤1000 */,
+           lost: false, lost_reason: "",      /* a flag, not a stage (Open Question 2) */
+           created_at, updated_at }
+RfqHistRow = { id, rfq_id, from /* stage or null */, to, at /* IST date */, note /* ≤200 */, created_at }
+STAGES = ["Received", "Quoted", "Negotiated", "Finalised", "PO", "Sample", "PPAP"]
+RELEASED = ["Finalised", "PO", "Sample", "PPAP"]      // "released parts" (assumption, confirm at review)
+```
+- Creating an RFQ writes history `{from:null, to:stage}`.
+- Every stage change writes `{from, to, at: today}`, plus an optional note. Marking lost or reopening writes `{to: "Lost"}` / `{to: <stage>, note: "Reopened"}`.
+- `rfq_no` is unique (case-insensitive) when not empty.
+- Status words shown on the cards, red or orange with text:
+  - `quote_due < today && stage === "Received"`: **"Quote overdue by N days"** (red).
+  - `quote_due === today && stage === "Received"`: "Quote due today" (orange).
+  - `next_action < today && stage !== "PPAP" && !lost`: **"Action overdue by N days"** (red).
+
+### 2.6 Schedule
+
+```
+VisitRow = { id, customer_id, type /* Visit|Call|Meeting */, date, time /* "" or "HH:MM" 24h */, note /* ≤500 */,
+             done: false, done_at /* or null */, log_id /* or null */, created_at, updated_at }
+OrderRow = { id, customer_id /* or null */, customer_name, order_no, part, qty /* int or null */, promised /* date or null */,
+             status_raw /* text from the file */, done /* boolean, from status_raw */, dispatched /* date or null, optional column */ }
+DONE_WORDS = ["dispatched", "delivered", "complete", "completed", "closed", "done", "shipped", "invoiced"]   // lowercase, "contains" match
+```
+- An orders import **replaces** all orders (snapshot, like money) and sets `orders_meta`.
+- Order state words:
+  - open and `promised < today`: **"Late by N days"** (red);
+  - open and promised = today: "Due today" (orange);
+  - open and within 7 days: "Due in N days";
+  - done with `dispatched > promised`: "Dispatched N days late" (grey text; history, not an action);
+  - done otherwise: "Done".
+- Visit state words: `!done && date < today`: **"Not done · N days ago"** (red); today: "Today" (orange).
+- Ticking a visit or call done offers **"Also add to the call log"** (ticked by default; Open Question 3). It creates a log entry `{at: date, type: Call→Call, Visit→Visit, Meeting→Visit, note}` and stores its `log_id`, so Last contacted updates.
+
+### 2.7 Customer name matching (shared by all imports), `varsha-crm-aliases-v1`
+
+```js
+nameKey(n) = n.normalize("NFKD").replace(/[̀-ͯ]/g, "").toLowerCase()
+  .replace(/&/g, " and ").replace(/\bprivate\b/g, "pvt").replace(/\blimited\b/g, "ltd")
+  .replace(/[^a-z0-9]/g, "")
+Store.matchCustomer(sourceName) ->
+  1. aliases[sourceName.trim()]  (a customer id, or "" meaning "not a CRM customer")
+  2. a customer with name === sourceName.trim()
+  3. a customer with nameKey(name) === nameKey(sourceName)
+  else null (unmatched)
+```
+The import dialog lists unmatched names, each with a `<select>`: "Choose customer…" / every customer by name / "Not a CRM customer". Choices are saved into the aliases document on Confirm, so the next import matches them automatically. The customer names in `customers.json` are the CUSTOMER_MASTER names.
+
+---
+
+## 3. Security and privacy
+
+### 3.1 Stage A
+- No backend, no keys, no login. Data stays in the browser it was typed or imported in.
+- **Git rules:**
+  - `customers.json` export has exactly `id,name,contact,contactFrom,city,state,phone,last,followUp,status,disputed`;
+  - the backup has no money;
+  - `.gitignore` (A1) gets `*.csv`, `varsha-crm-backup-*.json`, `supabase/.generated/`, `.env*`, `node_modules/`;
+  - test fixtures are built in code with made-up amounts, never files of real data.
+- `textContent` / `.value` only; a test greps for `innerHTML` in every js file.
+- CSP meta:
+  ```html
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self'; base-uri 'none'; form-action 'self'; object-src 'none'">
+  ```
+  Bar widths use `el.style.width` (CSSOM, allowed). File import uses `FileReader` (no network).
+- **Hide amounts:** a toggle in the Dashboard head ("Hide amounts", persisted in the view key). When on, every amount on every tab renders as `₹ •••` with `aria-label="amount hidden"`. Print follows the toggle.
+- Imported CSVs are never uploaded anywhere. The dialog text says: "The file is read in this browser only. Amounts are not sent anywhere and are not saved to git."
+- Known existing exposure: the public `customers.json` holds company names, 10 contact names and 42 phones (Open Question 4).
+- CLAUDE.md rule 1: the page never writes to the Google Sheet. Imports are CSV files the user downloads from it.
+
+### 3.2 Stage B
+See §8: RLS + allowlist, sign-ups off, anon revoked, column grants, the emergency revoke, the key rules.
+
+---
+
+## 4. Shared contracts (frozen by A1; other agents only consume them)
+
+### 4.1 `Store` (`js/store.js`)
+
+Every write:
+1. validates, and resolves `{ok:false, error, field}` with no change if invalid;
+2. applies the change and fires `onChange(reason)` synchronously;
+3. persists;
+4. resolves `{ok:true, queued:false}`.
+Stage B keeps the signatures.
+
+```js
+window.Store = {
+  init(): Promise<{mode:"local"|"supabase", user:null|{email}}>,
+  load(): Promise<{ok:boolean, error?:string}>,          // seed + migrate, then onChange("load")
+  status(): { mode, pending:number, storageOK:boolean, loadError:string },
+  onChange(cb: (reason: string /* "load"|"local"|"customers"|"log"|"rfqs"|"rfq_history"|"visits"|"orders"|"money"|"aliases"|"notice"|"error" */, detail?) => void),
+
+  // helpers (also module.exports for Node unit tests)
+  todayISO(), addDays(iso, n), dayNum(iso), daysBetween(aISO, bISO) /* b - a */,
+  fuKind(c, today) /* "overdue"|"today"|"week"|"later"|"none" */, fuText(c, today),
+  lastBucket(c, refISO) /* "0-30"|"31-60"|"61-90"|"91+"|"never" */, slug(name, isTaken?), uuid(),
+  nameKey(n), matchCustomer(sourceName) /* id | "" | null */, setAliases(map /* {sourceName: id|""} */): Promise<Result>,
+
+  // customers + call log (rich API)
+  customers(), get(id), latestOrder() /* max last */,
+  addCustomer(f), saveCustomer(id, {name, contact, phone, city, last}), setStatus(id, s), setFollowUp(id, iso),
+  removeCustomer(id) /* refuses if referenced (§2.2) */, refs(id) /* {rfqs, visits, orders} counts */,
+  listLog(id) /* newest first */, allLog(), logCount(id), lastContacted(id) /* among CONTACT_TYPES */,
+  addLog(id, {at?, type, note}), markDone(id, {type, note?, next?}),
+
+  // generic collections: "rfqs" | "rfq_history" | "visits" | "orders"
+  col(name): {
+    all(): Row[],  get(id): Row|undefined,  where(fn): Row[],
+    insert(row): Promise<Result & {row}>,      // id = uuid() if missing; created_at/updated_at set
+    patch(id, fields): Promise<Result & {row}>,
+    remove(id): Promise<Result>,
+    replaceAll(rows): Promise<Result>          // imports (orders)
+  },
+  // documents: "money" | "aliases" | "orders_meta"
+  doc(name): { get(): object|null, set(obj): Promise<Result>, clear(): Promise<Result> },
+
+  // exports
+  exportCustomersJson(): {note, customers},                    // exact keys §3.1; no notes, no amounts
+  exportBackup(): { format: "varsha-crm-backup-v2", exportedAt, note, customers, callLog, rfqs, rfqHistory, visits, orders, ordersMeta }  // NO money
+};
+// CONTACT_TYPES = ["Call","Visit","Email","Telegram","Note"] (constant; assumption A6 in §10)
+```
+- Validation for customers and log is the same as earlier versions. Name 1–120, unique case-insensitive: "<name> is already in the list." Phone ≤ 30 and `/^[0-9+()\-\s.\/–]*$/`. Note ≤ 500. `at` ≤ today. `next` ≥ today. Editing `contact` clears `contactFrom`.
+- Generic collections only check that the value is a plain JSON-able object under 10 KB. **The owning module validates its domain rules** before calling (e.g. `rfqs.js` checks stage names).
+- Storage blocked: keep data in memory and show `#storageWarn`.
+- Never `console.error` (the smoke test fails on console errors); use `console.warn`.
+
+### 4.2 `App` (`js/app.js`): shell, router, panels
+
+```js
+window.App = {
+  registerPanel(id /* "dash"|"list"|"rfqs"|"schedule"|"export" */, {
+    label, mount(panelEl), render(), show(filter /* panel-specific, see each module */), summary?() }),
+  boot(),                                 // Store.init/load, mount panels, open saved tab, body.dataset.ready = "1"
+  show(id, filter?),                      // switch tab; if filter given, call panel.show(filter) (it REPLACES that panel's filters)
+  tab(): string,
+  view(panelId): object, setView(panelId, obj),   // per-panel persisted slice of varsha-crm-view-v1
+  onData(cb),                             // Store.onChange batched per animation frame, then cb()
+  hideAmounts(): boolean, setHideAmounts(bool),
+  notice(text, kind /* "info"|"error" */), // #notice / #syncErr banners with dismiss ×
+  announce(text),                         // #live polite region
+  download(filename, text, mime),
+  openDialog(dialogEl, openerEl), closeDialog(dialogEl),   // showModal + focus return (by data-id + class after re-render)
+  fmt: { date(iso) /* "12 Oct 2026" */, day(iso) /* "Tue 20 Oct" */, money(n) /* "₹4,56,789" */,
+         moneyShort(n) /* "₹4.57 L", "₹1.23 Cr" */, int(n), rel(days) /* "3 days" */ }
+};
+```
+- `fmt.money`: `"₹" + Math.round(Math.abs(n)).toLocaleString("en-IN")`. Negative values show as `"−₹1,200 (credit)"`. `null` shows "—". All of it respects `hideAmounts()`.
+- `moneyShort`: ≥ 1e7 -> Cr with 2 decimals; ≥ 1e5 -> L with 2 decimals; else full.
+- View key: `{ tab: "dash", hide: false, panels: { list: {view, filter, q, sort, dir, extra}, rfqs: {...}, schedule: {...}, export: {...}, dash: {from} } }`. A1 migrates the Phase 1 top-level `{view, filter, q, sort, dir}` into `panels.list`.
+
+### 4.3 `CrmCsv` (`js/csv.js`), pure (also module.exports)
+
+```js
+window.CrmCsv = {
+  parse(text): string[][],           // strips BOM; detects , ; or \t from the first non-empty line; RFC 4180 quotes; CRLF/LF
+  findHeader(rows, spec): { index, map /* fieldKey -> column index */, missing: [labels], found: [headers] },
+                                     // scans the first 10 rows; picks the first row matching ALL required fields
+  normHeader(h): string,             // lowercase, trim, "&"->"and", remove spaces _ - . ( ) : / ; keep letters digits + > <
+  parseAmount(s): { ok:true, value:number|null } | { ok:false },
+  parseDate(s): { ok:true, value:"YYYY-MM-DD"|null } | { ok:false },
+  parseInt(s): { ok:true, value:number|null } | { ok:false },
+  toCSV(table), toTSV(table), safeCell(v)      // export builders (§5.7)
+};
+```
+- **`parseAmount`:**
+  - trim, and remove NBSP, spaces, `₹`, `Rs`, `Rs.` and `INR` (case-insensitive) and commas (Indian `1,23,456.78` and Western both work);
+  - empty, `-`, `—` or `–` become `{ok:true, value:null}`, treated as 0 in sums and shown as "—";
+  - `(1,234)` means −1234; a leading `-` or `−` (U+2212) means negative;
+  - suffix `Cr` means negative (credit balance), `Dr` means positive;
+  - then it must match `/^\d+(\.\d+)?$/`, else `{ok:false}`;
+  - round to 2 decimals.
+- **`parseDate`:** accepts `YYYY-MM-DD`, `DD/MM/YYYY`, `DD-MM-YYYY`, `DD.MM.YYYY`, `DD/MM/YY` (20YY), `D-Mon-YYYY` / `DD Mon YYYY` (Jan–Dec, any case). **Always day-first** (India). It validates real dates (no 31/02). Empty becomes `null`.
+- **`parseInt`:** after removing commas it must be `/^\d+$/`. Empty becomes `null`.
+
+### 4.4 `CrmImport` (`js/importer.js`): the shared Import dialog
+
+```js
+CrmImport.open({
+  title: "Import money data",
+  intro: "Export the AGING or LIVE_POSITION tab of the Collections sheet (File > Download > Comma-separated values) and choose the file.",
+  specs: [ { key: "aging", label: "AGING tab", fields: [ { key, label, required, synonyms: [..], type: "text"|"amount"|"date"|"int" } ],
+             skipRow?(cells) -> reason|null } ],             // e.g. "Total" rows
+  customerField: "customer",                                // field whose value is matched to customers (or null)
+  asOf: true,                                               // show the "Data as of" date
+  onConfirm(result): Promise<{ok, error?}>
+  // result = { specKey, meta: ImportMeta, rows: [{ ...typed fields, sourceName, customerId /* or null */, row /* file row no */ }], aliases }
+});
+```
+
+Dialog `#importDlg` (built by importer.js once, reused):
+1. **Choose file:** `<input type="file" id="importFile" accept=".csv,text/csv,text/tab-separated-values">` and a "Choose CSV file" button. Read with `FileReader.readAsText(file, "utf-8")`.
+2. **Recognise:**
+   - Every spec runs `findHeader`. The best match (all required found) is preselected in `<select id="importKind">` ("This file is: AGING tab / LIVE_POSITION tab"); the user can override.
+   - **Mismatch:** `#importErr` (`role="alert"`, red, with text) says: "This file does not have the columns we need. Missing: Customer, 1-30 days. Columns found in your file: Party, Amount, Days. Check that you exported the right tab." Confirm stays disabled.
+3. **Check:** a summary list:
+   - "52 rows read · 47 kept · 3 skipped (total rows, blank names)";
+   - "44 matched to customers · 3 not matched";
+   - number and date errors as "Row 12: "12,34a" in Overdue is not a number" (the first 20, then "+N more"). **Any error blocks the import** (strict, so money totals are never wrong).
+   - Same-name rows: "2 customers appear on more than one row; their amounts are added together."
+3b. **Unmatched names** (if any): `<ul id="importUnmatched">`, each with the source name (`textContent`) and a `<select>` of customers + "Not a CRM customer". Unmatched rows are still imported; they count in totals but not per customer.
+4. **Data as of:** `<input type="date" id="importAsOf">`, default = file date in IST, max = today. Label: "Data as of (the date the sheet was exported)".
+5. **Confirm** `#importOk` "Import 47 rows" / Cancel. On success: close, `App.announce("Imported 47 rows from AGING.")`, `App.notice` with the as-of date.
+- 375px: full width (`min(640px, 100vw - 16px)`), the summary scrolls vertically, selects are full width.
+- Keyboard: standard dialog rules (§5.8).
+
+### 4.5 Module contracts (each module exposes these; the Dashboard and Export depend only on them)
+
+```js
+CrmCustomers = { openDone(id), openNotes(id), openEdit(id), visible(): Customer[], summary(): string };
+// list filter: { view?, filter?, q?, sort?, extra? }; extra kinds:
+//  {kind:"last", value:"0-30"|"31-60"|"61-90"|"91+"|"never", ref} {kind:"state", value} {kind:"disputed"}
+//  {kind:"contact", value:"7d"|"30d"|"stale30"} {kind:"due", value:date} {kind:"ids", value:[id], label}
+//  {kind:"money", value:"overdue"|"outstanding"} {kind:"aging", value:"b1_30"|"b31_60"|"b61_90"|"b90"}
+
+CrmMoney = {
+  has(): boolean, meta(): {aging: ImportMeta|null, live: ImportMeta|null},
+  forCustomer(id): { outstanding: number|null, overdue: number|null, b1_30, b31_60, b61_90, b90 } | null,
+  stats(): null | { asOf, stale /* asOf > 7 days ago */, outstanding /* or null */, overdue /* or null */,
+                    overduePct /* or null */, buckets: { b1_30: {amount, n}, b31_60, b61_90, b90 },
+                    top5: [{ id, name, overdue, b90 }], unmatched: { n, amount } },
+  openImport(), clear(which /* "aging"|"live"|"all" */): Promise<Result>
+};
+
+CrmRfq = {
+  STAGES, RELEASED,
+  stats(today): { total, open, lost, byStage: {Received: n, ...}, valueQuoted /* Quoted+Negotiated+Finalised, not lost */,
+                  valueWon /* PO+Sample+PPAP */, quoteOverdue, quoteDueToday, actionOverdue,
+                  released: { total, byStage: {Finalised, PO, Sample, PPAP}, list: [{id, rfqNo, part, customerName, stage}] },
+                  hints: { quotedToPoPct /* or null */, avgDaysToQuote /* or null */, stuck: [{stage, n}] /* open, stage_at > 30 days ago */ } },
+  openNew(customerId?), openEdit(id), visible(): RfqRow[], summary(): string
+};
+// rfqs filter: { view?: "board"|"table", stage?: Stage|"released",
+//               flag?: "quoteOverdue"|"quoteToday"|"actionOverdue"|"stuck"|"openQuoted"|"won"|"quotedEver",
+//               stuckStage?, customerId?, q?, showLost?: boolean }
+
+CrmSchedule = {
+  visitStats(today): { today: n, next7: [{id, date, time, type, customerId, customerName}], next7Count, missed: n },
+  orderStats(today): null | { asOf, stale, open, late, dueToday, dueWeek, onTimePct30 /* or null */ },
+  openNewVisit(customerId?, date?), clearOrders(): Promise<Result>, visibleVisits(), visibleOrders(), summary()
+};
+// schedule filter: { sub?: "visits"|"orders", month?: "YYYY-MM", day?: date, vflag?: "missed"|"next7"|"today",
+//                   oflag?: "late"|"today"|"week"|"open"|"all", customerId?, q? }
+```
+- Pure stats functions also go into `module.exports` for unit tests: `rfqStats(rfqs, history, customers, today)`, `moneyStats(doc, customers, today)`, `visitStats(...)`, `orderStats(...)`.
+- If a module is missing (stub), `window.CrmX` is undefined. The Dashboard shows that card's "Not available yet" state and does not error.
+
+---
+
+## 5. UI specs
+
+### 5.1 Header, logo, tabs, banners
+
+- `assets/varsha-logo.jpg` (200×200, already in the repo).
+- **Header:** a white rounded badge left of the existing title block (the dark-grey wordmark is unreadable on navy):
+  ```html
+  <div class="brand"><span class="logo-badge"><img src="assets/varsha-logo.jpg" alt="Varsha Forgings" width="64" height="64"></span>
+    <div> company / h1 "Varsha CRM" / date </div></div>
+  ```
+  ```css
+  .brand { display: flex; align-items: center; gap: 16px; }
+  .logo-badge { flex: none; background: #fff; border-radius: 16px; padding: 6px; box-shadow: 0 6px 18px rgba(0,0,0,.25); line-height: 0; }
+  .logo-badge img { width: 64px; height: 64px; object-fit: contain; display: block; }
+  @media (max-width: 860px) { .logo-badge { border-radius: 12px; padding: 4px; } .logo-badge img { width: 44px; height: 44px; } }
+  ```
+- **Favicon:** **A1 makes** `assets/favicon-64.png`, the circle only, with a transparent background (Pillow 12 is installed):
+  ```
+  python3 -I - <<'EOF'
+  from PIL import Image, ImageDraw
+  src = Image.open("assets/varsha-logo.jpg").convert("RGB"); w, h = src.size
+  pts = [(x, y) for y in range(int(h * .75)) for x in range(w) if min(src.getpixel((x, y))) < 200]
+  x0, x1 = min(p[0] for p in pts), max(p[0] for p in pts); y0, y1 = min(p[1] for p in pts), max(p[1] for p in pts)
+  s = max(x1 - x0, y1 - y0) + 2; cx, cy = (x0 + x1) // 2, (y0 + y1) // 2
+  c = src.crop((cx - s//2, cy - s//2, cx - s//2 + s, cy - s//2 + s)).resize((256, 256), Image.LANCZOS).convert("RGBA")
+  m = Image.new("L", (256, 256), 0); ImageDraw.Draw(m).ellipse((2, 2, 253, 253), fill=255)
+  c.putalpha(m); c.resize((64, 64), Image.LANCZOS).save("assets/favicon-64.png")
+  EOF
+  ```
+  The circle's bounding box is about (43, 23)–(165, 145); the wordmark starts at y 156. A1 checks the result visually.
+- **Login card (stage B):** logo at 72px. **Dashboard print header:** logo at 48px (§5.6).
+- **Tabs** (`nav.tabs[role=tablist]`, A1). Buttons `#tab-dash`, `#tab-list`, `#tab-rfqs`, `#tab-schedule`, `#tab-export`, labelled Dashboard · Customers · RFQs · Schedule · Export. Panels `#panel-<id>[role=tabpanel]`.
+  - Default is `dash` on the first visit, then the last used tab.
+  - Left/Right/Home/End keys with a roving tabindex.
+  - Selected tab: 3px orange underline, navy text, min height 44px.
+  - **At ≤ 860px the tab bar scrolls sideways inside itself** (`overflow-x: auto; scrollbar-width: none`; the page itself never scrolls sideways). The selected tab is scrolled into view.
+- **Banners** above the panels (A1): `#storageWarn` (alert), `#notice` (status, dismissible), `#syncErr` (alert, dismissible). Also `#live` (`aria-live="polite"`, visually hidden).
+- "+ Add customer" stays in the header on every tab. It opens the Add dialog owned by `customers.js`, so the header button calls `CrmCustomers.openAdd()`; A1 stubs it.
+
+### 5.2 Customers tab (`customers.js`; A1 ports the Phase 1 features, A2 adds P2-A/B/C and the money column)
+
+- Phase 1 behaviour stays: follow-up and status chips with counts, search, sort, red overdue row with "Overdue by N days", orange Due today, tel links, grey italic guesses, Disputed tag, add, remove (hand-added only), 375px cards.
+- **Extra filter chip row** `#extraBar`: "Also: <label> ×". It covers every `extra` kind in §4.5 (labels: "Last order 61–90 days ago", "State: Maharashtra", "Disputed", "Contacted in the last 7 days", "Not contacted in 30+ days", "Follow-up on Tue 20 Oct", "Customer: ZF STEERING…" / "These 5 customers", "Has overdue amount", "Overdue 61–90 days"). It persists.
+- **Row additions** (`tr[data-id]`):
+  - `.lc` under the name: "Last contacted 12 Oct 2026 · 7 days ago" / "today" / "No contact logged yet" (`--ink-dim`).
+  - Actions `.acts`:
+    - `.done-btn` "✓ Done" (only with a follow-up; `aria-label="Mark follow-up done for <name>"`);
+    - `.notes-btn` "Notes" + `.badge` count (`aria-label="Notes for <name>, 3 entries"`);
+    - `.edit-btn` "Edit";
+    - `.rm` × (hand-added only; refused with a message if referenced).
+  - **Money column** `td.money` (header "Outstanding / overdue"; card label "Money"). Shown only when `CrmMoney.has()`.
+    - Line 1: outstanding `fmt.money`, or "—".
+    - Line 2: `<span class="amt-over">Overdue ₹4,56,000</span>` in red text, with the word "Overdue". Shows "No overdue" (dim) when 0, and nothing when the customer is not in the file.
+    - Title on the cell: "Data as of 18 Oct 2026".
+    - New sort key `overdue` (sort button on the column header).
+- **Done dialog** `#doneDlg` (P2-A):
+  - Type select (Call default / Visit / Email / Telegram / Note), outcome note (textarea, 500 max, counter `#doneCount`), next follow-up date (min today) with quick buttons "In 1 week / 2 weeks / 1 month".
+  - Note: "Leave the date empty to clear the follow-up. Status does not change." Error `#doneErr`.
+  - Save calls `Store.markDone`.
+  - Announces "Marked done. Next follow-up 26 Oct 2026." / "Marked done. No follow-up set."
+- **Notes drawer** `#notesDlg.drawer` (P2-B):
+  - Header with close ×.
+  - Sub-line: "<name> · Last contacted … · N entries".
+  - Add form: type (Note default), date (default and max today), note (required, 500, `#noteCount`), `#noteErr`, "Save note".
+  - History `ol#notesList` newest first. Each `li`: `time` · `.log-type` · optional `.tag-done` "Follow-up done", then `.log-text` (`white-space: pre-wrap; overflow-wrap: anywhere`), then optional "Next follow-up: …".
+  - Empty: `#notesEmpty` "No notes yet."
+  - CSS: `dialog.drawer { margin: 0 0 0 auto; width: min(440px, 100vw); height: 100dvh; max-height: 100dvh; border-radius: 0 }` and **`dialog.drawer[open] { display: flex; flex-direction: column }`** (never set `display` on a closed dialog). Full width at ≤ 860px.
+- **Edit dialog** (P2-C): reuses `#dlg[data-mode=edit]`.
+  - Title "Edit customer"; the follow-up/status row `#addOnly` is hidden; "Save changes".
+  - Errors go in `#formErr` (`role="alert"`). That replaces Phase 1's `alert()` in add mode too.
+  - The id never changes. Use `form.elements.name`.
+- Card CSS:
+  ```css
+  .acts { display:flex; flex-wrap:wrap; gap:6px; justify-content:flex-end }
+  .btn-sm { font:inherit; font-size:.85rem; font-weight:700; padding:6px 10px; min-height:36px; border-radius:8px;
+            border:1.5px solid var(--line); background:#fff; color:var(--navy); cursor:pointer; white-space:nowrap }
+  .badge { display:inline-block; min-width:20px; margin-left:6px; padding:1px 6px; border-radius:999px;
+           background:var(--navy); color:#fff; font-size:.75rem; text-align:center }
+  ```
+  At ≤ 860px, actions align left and `.btn-sm` gets `min-height: 40px`.
+
+### 5.3 Money (P2-G; `money.js` + importer)
+
+- **Entry points:** the Dashboard money card "Import money data" (`#moneyImportBtn`), the Customers tab toolbar button "Import money" (only before any money is imported; afterwards the column title links to it), and the Export tab "Data in this browser" card.
+- **Header spec** (`HEADER_SPEC` at the top of `money.js`). The **exact headers are coming from the lead**: A5 adds them as the first synonym of each field. These placeholders are guesses so matching works now:
+
+  | spec | field | required | type | synonyms (normalised before comparing) |
+  |---|---|---|---|---|
+  | aging | customer | yes | text | `CUSTOMER_NAME`, `Customer`, `Customer Name`, `Party`, `Party Name` |
+  | aging | b1_30 | yes | amount | `1-30`, `1-30 Days`, `0-30`, `0-30 Days` |
+  | aging | b31_60 | yes | amount | `31-60`, `31-60 Days` |
+  | aging | b61_90 | yes | amount | `61-90`, `61-90 Days` |
+  | aging | b90 | yes | amount | `>90`, `90+`, `>90 Days`, `Above 90`, `91+` |
+  | aging | overdue | no | amount | `Overdue`, `Total Overdue`, `Overdue Amount` |
+  | live | customer | yes | text | as above |
+  | live | outstanding | yes | amount | `Outstanding`, `Total Outstanding`, `Balance`, `Net Outstanding`, `Closing Balance` |
+  | live | overdue | no | amount | `Overdue`, `Overdue Amount` |
+
+  `skipRow`: an empty customer cell, or one matching `/^(grand\s*)?total\b/i`, is skipped with the reason "total row" or "blank name".
+- `onConfirm` writes `Store.doc("money")` `{aging | live: {meta, rows}}` (the other file's part is kept) and `Store.setAliases(result.aliases)`.
+- **Clear:** "Clear imported money data" asks `confirm("Remove all imported amounts from this browser?")`, then `CrmMoney.clear("all")`. A per-file clear lives in the Export card.
+- **Empty state** (Dashboard money card, no money data): "No money data yet. Export the AGING and LIVE_POSITION tabs of the VFPL Collections Engine sheet as CSV and import them here. Amounts stay in this browser only and are never saved to git." plus the Import button.
+- **Stale:** `asOf` older than 7 days shows orange text "Money data is 12 days old. Import a fresh file." Totals stay visible.
+- Money never appears in `customers.json`, the backup, or CSV/copy unless the user ticks "Include amounts" (§5.7).
+
+### 5.4 RFQs tab (P2-H/J; `rfqs.js`)
+
+**Toolbar:** view toggle Board | Table (persisted); "+ New RFQ" `#rfqNew`; "Import RFQs" `#rfqImport`; search `#rfqQ` (RFQ no, part, customer); chips "Quote overdue (n)" (red text when n > 0), "Action overdue (n)", "Released parts (n)", "Show lost"; a stage chip row in Table view (All + 7 stages, with counts).
+
+**Board** (`#rfqBoard`):
+- Desktop: 7 columns in `STAGES` order, each a `<section aria-labelledby>` with heading "Quoted (4)" and total value "₹12.4 L" (when any value).
+- Cards are `<article class="rfq-card" data-id tabindex="-1">` with:
+  - RFQ no (bold) · customer;
+  - part name / part no · qty;
+  - quoted value;
+  - status words (§2.5) or "Quote due 21 Oct";
+  - "Next: 24 Oct";
+  - controls: `button.prev` "◀" (`aria-label="Move RFQ 123 back to Received"`), `button.next` "▶" (`aria-label="Move RFQ 123 to Negotiated"`), `button.edit` "Edit".
+- After a move, focus goes to the same card's button in its new column; `App.announce("RFQ 123 moved to Negotiated.")`.
+- No drag and drop (keyboard first; may be added later).
+- **≤ 860px: stacked sections**, each a `<details open>` per stage with the count in the `<summary>`; cards full width.
+- The page never scrolls sideways. On desktop the 7 columns use `grid-template-columns: repeat(7, minmax(0, 1fr))` with small cards; 860–1100px switches to a 4-column wrap.
+
+**Table** (`#rfqTable`):
+- Columns: RFQ no · Customer · Part · Qty · Received · Quote due (status words) · Value · Stage (`<select>`, change = move + history) · Next action · Age (days since received) · Edit.
+- Sort by received, quote due, value, next action.
+- Cards at ≤ 860px as in the Customers tab.
+- Lost RFQs are hidden unless "Show lost"; shown greyed with "Lost: <reason>".
+
+**RFQ dialog** `#rfqDlg` (new and edit):
+- **Customer:** `<input list="rfqCustomers">` with a datalist of customer names; on save it must match a customer exactly (`Store.matchCustomer`), else `#rfqErr` "Pick a customer from the list, or add the customer first."
+- Fields: RFQ no, part name, part no, qty (int), received (date, default today, max today), quote due (date), quoted value (amount, parsed with `CrmCsv.parseAmount`), stage (select; new = Received), next action (date), notes (≤ 1000, counter).
+- "Mark as lost" checkbox + reason (≤ 200), edit mode only.
+- **Stage history** (edit mode, read-only `ol.hist`): "12 Oct 2026 · Received → Quoted · note".
+- Changing the stage in the dialog writes one history row, with an optional "Stage note" input shown when the stage changed.
+- Validation messages: "Enter the RFQ number or the part name." (at least one); "RFQ <no> already exists."; "Quantity must be a whole number."; "Quoted value is not a number."
+
+**RFQ import:** `CrmImport.open` with spec `rfqs`. Placeholder synonyms (to be fixed when the sheet is seen; Open Question 5):
+- customer: `Customer`, `Customer Name`, `Party`
+- rfq_no: `RFQ No`, `RFQ Number`, `RFQ #`, `Enquiry No`
+- part_name: `Part Name`, `Part`, `Description`
+- part_no: `Part No`, `Part Number`, `Drawing No`
+- qty: `Qty`, `Quantity`, `Annual Qty`
+- received: `Date Received`, `RFQ Date`, `Received`
+- quote_due: `Quote Due`, `Due Date`, `Quote Due Date`
+- quoted_value: `Quoted Value`, `Quote Value`, `Value`
+- stage: `Stage`, `Status`
+- next_action: `Next Action Date`, `Next Action`
+- notes: `Notes`, `Remarks`
+
+Rules:
+- Required: customer, and rfq_no or part_name.
+- A stage value must match a STAGES name case-insensitively (also accept "PO received"→PO and "Finalized"→Finalised); otherwise it is a row error.
+- Rows **upsert by rfq_no**: existing ones are updated and a stage change adds history with the note "Imported"; new ones are inserted with history.
+- Rows without rfq_no are always inserted.
+- Unmatched customers keep `customer_name` and `customer_id: null`, shown in grey italic "not in CRM".
+
+### 5.5 Schedule tab (P2-I; `schedule.js`)
+
+Sub-tabs (`role=tablist` inside the panel, persisted): **Visits & calls** (default) | **Orders & dispatch**.
+
+**Visits & calls**
+- Toolbar: "◀" `#calPrev`, the month title "October 2026" (`h2`, `aria-live="polite"`), "▶" `#calNext`, "Today" `#calToday`, "+ Add visit or call" `#visitNew`. Chips: "Today (n)", "Next 7 days (n)", "Not done (n)" (red text when n > 0).
+- **Desktop (> 860px): month grid + agenda.**
+  - The grid is a `<table class="cal">` with Monday-first headers (Mon…Sun) and 6 rows.
+  - Each day cell is a `<button class="day" data-date>` with `aria-label="Tuesday 20 October 2026, 2 entries"`. It shows the date number, up to 3 chips ("10:30 Visit · ZF STEERING…"), then "+N more".
+  - Today: orange ring plus the visually hidden text "today". Days outside the month are dim. A day with a missed entry has a red dot plus the hidden text "has missed entries".
+  - Clicking a day selects it; the agenda (right, 360px) lists that day's entries.
+  - Arrow keys move day focus within the grid (Left/Right ±1, Up/Down ±7); Enter selects.
+- **≤ 860px: agenda list only.**
+  - "Not done" (past, not done) at the top, in red text.
+  - Then today and the next 30 days, grouped by day ("Today · Mon 19 Oct", "Tomorrow · Tue 20 Oct", …).
+  - The month buttons page the list by 30 days.
+- Agenda item: time (or "Any time") · type · customer (button → `CrmCustomers.openNotes`) · note (`textContent`) · status words · a `<input type="checkbox" class="vdone">` labelled "Done" · Edit button.
+- Ticking done shows a small inline confirm "Also add to the call log" (checkbox, ticked) + Save. That calls `Store.col("visits").patch` and, if ticked, `Store.addLog` and stores `log_id`.
+- **Visit dialog** `#visitDlg`:
+  - customer (datalist, must match);
+  - type select Visit/Call/Meeting;
+  - date (default the selected day);
+  - time (`type=time`, optional);
+  - note (≤ 500, counter);
+  - Done checkbox (edit mode);
+  - Delete (edit mode, with confirm).
+  - Errors in `#visitErr`.
+
+**Orders & dispatch**
+- Toolbar: "Import orders" `#ordersImport`; "Data as of 18 Oct 2026" (orange stale text when > 7 days old); "Clear orders"; chips "Late (n)" (red text), "Due today (n)", "Due this week (n)", "Open (n)", "All"; search.
+- Table: Customer · Order / PO no · Part · Qty · Promised · Status words (§2.6) · Status from file (dim). Sorted by promised ascending; late first. Cards at ≤ 860px.
+- **Empty state:** "No order schedule imported yet. Export the order or dispatch sheet as CSV and import it here. Columns needed: customer, order or PO number, part, quantity, promised date, status." + Import.
+- **Order import spec** (assumed; Open Question 5): customer* (`Customer`, `Party`), order_no* (`PO No`, `Order No`, `PO Number`, `SO No`), part (`Part`, `Part Name`, `Item`), qty (`Qty`, `Quantity`), promised* (`Promised Date`, `Delivery Date`, `Due Date`, `Commit Date`), status (`Status`, `Dispatch Status`), dispatched (`Dispatch Date`, `Dispatched On`). Replace-all on Confirm.
+
+### 5.6 Dashboard tab (P2-F; `dashboard.js`)
+
+**Head row:**
+- "As of Monday, 19 October 2026 (India time)";
+- `#hideAmt` toggle "Hide amounts" (`aria-pressed`, persisted);
+- `#printBtn` "Print / Save as PDF" (`no-print`);
+- `#printHead` (print only): logo 48px + "Varsha Forgings · CRM dashboard · 19 Oct 2026 (India time)".
+
+**Sections, in order.** Every card is `section.dcard[aria-labelledby]` with an `h2`. **Every number is a `<button>`** that calls `App.show(tab, filter)`. Clicking it must show exactly that many rows or cards.
+
+1. **Customers at a glance** (tiles `.tiles`, `repeat(auto-fit, minmax(150px, 1fr))`, 2 per row at 375px):
+
+   | Tile | → | Notes |
+   |---|---|---|
+   | Total customers | `list {}` | |
+   | Active / Follow up / At risk | `list {filter}` | label text carries the meaning |
+   | Overdue | `list {view:"overdue"}` | red border + "Needs a call now"; "None overdue" when 0 |
+   | Due today | `list {view:"today"}` | orange + "Due today" |
+   | Next 7 days | `list {view:"week"}` | |
+   | No follow-up set | `list {view:"none"}` | |
+   | Disputed | `list {extra:{kind:"disputed"}}` | |
+
+2. **Money** (needs `CrmMoney.stats()`; empty state §5.3; "Not available yet" if the module is missing):
+   - Tiles:
+     - "Total outstanding ₹X" → `list {extra:{kind:"money", value:"outstanding"}, sort:"overdue"}`;
+     - "Total overdue ₹Y", red, with the label "Overdue" → `list {extra:{kind:"money", value:"overdue"}, sort:"overdue"}`;
+     - "Overdue share N%" → same as overdue.
+   - **Aging bar:** one stacked bar of 4 segments for 1–30 / 31–60 / 61–90 / >90 days (navy shades getting darker; >90 uses `--risk`). The legend is 4 buttons "61–90 days · ₹2.1 L · 6 customers" → `list {extra:{kind:"aging", value}}`.
+   - **Top 5 overdue:** an ordered list, each name a button → `list {extra:{kind:"ids", value:[id], label:name}}`, with the amount in red and the text "overdue"; a "Show these 5" button → `{kind:"ids", value:[5 ids], label:"Top 5 overdue"}`.
+   - Footer: "Data as of 18 Oct 2026 (AGING), 18 Oct 2026 (LIVE_POSITION)", plus "Includes ₹X for N names not in the CRM" (button → `CrmMoney.openImport()`), plus "Import money data".
+   - Amounts follow Hide amounts.
+   - Out of scope for stage A: payment trends over time (needs history kept in the stage B database).
+
+3. **Attention now** (`span 7`): overdue follow-ups (oldest first, then name), then due today.
+   - Each item: name (button → `openNotes`) · red "Overdue by N days" / orange "Due today" · contact and `tel:` phone · last contacted · overdue amount if money exists (red, with "overdue") · `✓ Done` → `CrmCustomers.openDone(id)` · `Notes n` → `openNotes(id)`.
+   - At most 10, then "Show all overdue (N)" / "Show all due today (M)".
+   - Empty: "Nothing overdue or due today."
+
+4. **Next 7 days** (`span 5`), two lists:
+   - (a) Follow-ups grouped by day. The group button "Tue 20 Oct (2)" → `list {extra:{kind:"due", value}}`; footer "All (N)" → `list {view:"week"}`.
+   - (b) Visits & calls from `CrmSchedule.visitStats`. Items: "Tue 20 Oct · 10:30 · Visit · ZF…" (button → `schedule {sub:"visits", day}`). Count "N visits and calls" → `schedule {sub:"visits", vflag:"next7"}`. "Not done: N" in red text → `{vflag:"missed"}`.
+   - Empty texts for each.
+
+5. **RFQ pipeline** (needs `CrmRfq.stats`):
+   - **Funnel:** 7 horizontal bars in stage order (navy fill scaled to the largest stage). Label "Negotiated · 3 · ₹8.2 L" → `rfqs {stage, view:"table"}`.
+   - Tiles:
+     - "Quote overdue N", red text → `rfqs {flag:"quoteOverdue", view:"table"}`;
+     - "Next action overdue N", red → `{flag:"actionOverdue"}`;
+     - "Value quoted, no PO yet ₹X" → `rfqs {flag:"openQuoted", view:"table"}` (Quoted + Negotiated + Finalised, not lost);
+     - "Won (PO and later) ₹Y" → `rfqs {flag:"won", view:"table"}`.
+   - **Hints** (text with clickable numbers):
+     - "N% of quoted RFQs reached PO" (N not clickable; the denominator count is a button → `{flag:"quotedEver"}`);
+     - "Quotes take N days on average from receipt";
+     - "N RFQs stuck in Negotiated for over 30 days" → `{flag:"stuck", stuckStage:"Negotiated"}`.
+     The hints need ≥ 3 RFQs, else "Add RFQs to see conversion hints."
+   - The filter list therefore is `flag ∈ quoteOverdue|quoteToday|actionOverdue|stuck|openQuoted|won|quotedEver`.
+   - Empty: "No RFQs yet. Add them on the RFQs tab or import your RFQ sheet."
+
+6. **Released parts** (P2-J):
+   - Tile "Released parts N" → `rfqs {stage:"released", view:"table"}`.
+   - Breakdown buttons "Finalised 2 · PO 3 · Sample 1 · PPAP 4" → `rfqs {stage}`.
+   - A list of up to 8 parts: "Part name (Part no) · customer · stage" → `CrmRfq.openEdit(id)`.
+   - Footnote (`--ink-dim`): **"Released parts = RFQ parts at Finalised, PO, Sample or PPAP. Please confirm this meaning."**
+
+7. **Orders** (needs `CrmSchedule.orderStats`):
+   - Tiles: "Late orders N", red + "Late" → `schedule {sub:"orders", oflag:"late"}`; "Due today N"; "Due this week N"; "On time (last 30 days) N%" (not clickable; or "—").
+   - "Data as of …".
+   - Empty: "No order schedule imported yet." + a button to go to Schedule › Orders.
+
+8. **Customer mix**, three cards (`span 4` each):
+   - **Status mix:** a stacked bar (`--ok`/`--warn`/`--risk`, `aria-hidden`) + 3 legend buttons "Active 20 (48%)".
+   - **Last order recency:**
+     - A toggle "Count days from: Today | Latest order in the data (12 Jul 2026)" (persisted `panels.dash.from`).
+     - Bars 0–30 / 31–60 / 61–90 / 91+ / No order on record → `list {extra:{kind:"last", value, ref}}`.
+     - Note: "Last order dates come from the Collections sheet, which stops at 12 Jul 2026 …". The date comes from `Store.latestOrder()`.
+   - **By state:** bars (top 8 + "Show all") → `list {extra:{kind:"state", value}}`; "Not known" last, grey italic; note "State comes from the GST number."
+
+9. **Activity:**
+   - Tiles "Contacted in last 7 days", "Last 30 days", "Not contacted in 30+ days" (customer counts) → `list {extra:{kind:"contact", value}}`.
+   - Recent activity: the 10 newest log entries (date · type · customer button → `openNotes` · "Follow-up done" tag · `.snippet` up to 80 chars).
+   - **Empty state:** "No calls or notes logged yet. When you finish a follow-up, press ✓ Done on the customer; use Notes to record any call or visit." + "Go to Attention now".
+
+10. **Quick links** (`no-print`): "Download Attention list (CSV)" (via `CrmCsv`), "Open the Export tab".
+
+**Grid:** `.dgrid { display:grid; grid-template-columns: repeat(12, minmax(0,1fr)); gap:16px }`. Sections 1, 2, 5, 7 and 9 are `span 12`; 3 is `span 7` and 4 is `span 5`; 6 is `span 12` (or `span 5` next to a `span 7` funnel when wide); the three cards of section 8 are `span 4` each. At ≤ 860px everything is `span 12`.
+
+**Bars:** `.hbar` is a `<button>` laid out with `grid-template-columns: minmax(90px, 32%) 1fr auto`, track `--line`, fill navy via `style.width`, `min-height: 40px`.
+
+**Re-render:** on `App.onData` and on tab show.
+
+**Pure compute (unit-tested):** `CrmDash.compute(customers, log, today, {from, latestOrder, lastContacted, money, rfq, visits, orders})` returns `{ customers: {...}, attention: [...], upcoming: [...], lastOrder: {...}, byState: [...], contact: {...}, recent: [...] }` plus the passed module stats. Ordering rules are as in each section.
+
+**Print** (`css/dashboard.css`, `@media print`):
+- Hide `header, nav.tabs, .no-print, [role=tabpanel]:not(#panel-dash), dialog, .banner`; force `#panel-dash { display:block !important }`. `#printBtn` calls `App.show("dash")` then `print()`.
+- Show `#printHead`.
+- Cards get `break-inside: avoid`; tiles print in 3 columns; `print-color-adjust: exact` (the red and orange words stay).
+- **`.snippet` (note text) is hidden.** Amounts are hidden if Hide amounts is on. Buttons print as plain text.
+
+### 5.7 Export tab (P2-E; `export.js`)
+
+1. **Customers:** scope radios "Customers in the Customers tab now (N), with current filters" (default) / "All customers (M)" (persisted). Show the `CrmCustomers.summary()` line. Two checkboxes, **unticked on every load and never remembered**:
+   - "Include notes text (private)";
+   - "Include amounts (private)". Shown only if money exists; it adds the columns Outstanding, Overdue, 1–30, 31–60, 61–90, >90. There is still only one header row, so Sheets stays clean.
+2. Buttons:
+   - **Download CSV** `#csvBtn`.
+   - **Copy for Google Sheets** `#copyBtn`, with fallback `#copyFallback` + `#copyBox` (readonly textarea, selected) when `navigator.clipboard.writeText` rejects. The text says to press Ctrl+C or long-press, then Copy; `execCommand("copy")` is tried.
+   - **Download customers.json** `#export` (all customers, no notes, no amounts; git-safe).
+   - **Download backup** `#backup` (customers, notes, RFQs, history, visits, orders; **no money**): "Private. Never commit it."
+3. **RFQs CSV** `#rfqCsvBtn`: scope "RFQs shown in the RFQs tab now" / "All RFQs". Columns: RFQ no, Customer, Part name, Part no, Qty, Received, Quote due, Quoted value, Stage, Stage since, Next action, Lost, Notes. The value column is included because RFQ data is the user's own pipeline; the warning line says "Contains quoted values (private)."
+4. **Visits CSV** `#visitCsvBtn` (all): Date, Time, Type, Customer, Note, Done.
+5. **Send to Google Sheet automatically** `#autoBtn` (disabled, "Coming next"; design in §8.6).
+6. **Data in this browser** (`#dataCard`):
+   - counts of customers, notes, RFQs, visits, orders ("as of …"), money ("AGING as of …, LIVE_POSITION as of …");
+   - buttons "Clear imported money data" (→ `CrmMoney.clear("all")`) and "Clear imported orders" (→ `CrmSchedule.clearOrders()`), each with a confirm;
+   - the note "To move everything to another browser, download the backup and import it there." **Backup import is out of scope for stage A** (stage B makes it unnecessary). The note says "Backup import comes with the shared database."
+7. `#exportMsg` (`role=status`).
+
+CSV rules (`CrmCsv`):
+- `"﻿"` + RFC 4180 (every field quoted, `"` doubled), CRLF rows with a trailing CRLF.
+- `safeCell` prefixes `'` to cells starting with `= + - @ \t \r`.
+- Dates as `YYYY-MM-DD`; amounts as plain numbers with 2 decimals (no ₹ or commas, so Sheets sums them).
+- Customer columns: Customer, Contact person, Phone, City, Last order, Follow-up, Status, Last contacted, Notes count [, Notes] [, amount columns].
+- **Never** emails, GST, ids or timestamps.
+- TSV: values have `\t\r\n` replaced by a space.
+- File names: `varsha-crm-customers[-shown]-<IST date>.csv`, `varsha-crm-rfqs-<date>.csv`, `varsha-crm-visits-<date>.csv` (all match `*.csv` in `.gitignore`).
+
+### 5.8 Shared rules for every dialog, the keyboard and 375px
+
+- Use `App.openDialog`: `showModal`, focus the first field, Esc closes, focus returns to the opener after re-render.
+- Ctrl/Cmd+Enter submits from a textarea. Errors use `role="alert"`. Counters turn `--warn` at 90% of the limit.
+- Every interactive control is a real `<button>`, `<input>` or `<select>` with a visible focus ring (3px orange).
+- **375px:** no page-level sideways scroll on any tab, with any dialog or drawer open. Tables become cards. The tab bar and the RFQ board (desktop only) are the only containers that may scroll sideways inside themselves.
+- Colours: `--ok`, `--warn` and `--risk` only for status, follow-up, late or overdue meaning, and always with words (rule 7). New tokens go in `:root` in `base.css`: `--navy-2: #2e4f7d; --navy-3: #5b7aa6` (aging shades).
+
+---
+
+## 6. Test plan
+
+### 6.1 Runner and ownership
+
+One command: `NODE_PATH=$(npm root -g) node tests/smoke.js`. Use `--strict` at integration time and before any push to `main`: any SKIP then fails.
+
+The runner (A1):
+- runs the static server (types: `.js text/javascript`, `.css text/css`, `.jpg image/jpeg`, `.png image/png`, `.json`, `.html`);
+- launches Chromium;
+- runs `tests/unit/*.js`, then `tests/checks/*.js`, in filename order;
+- prints PASS/FAIL/SKIP; exits 1 on FAIL (or on SKIP with `--strict`).
+
+Module signature: `module.exports = async (t) => {}` with:
+```js
+t = { browser, url, root, data /* customers.json */, check(name, ok, extra), skip(name, why),
+      fresh(opts?) -> {ctx, page},  open(page) /* waits for body[data-ready="1"] */, tab(page, id), reload(page),
+      row(page, name), rows(page) /* visible #rows tr */, istToday(offset),
+      csvFile(name, text) -> {name, mimeType:"text/csv", buffer},       // for page.setInputFiles
+      download(page, clickSelector) -> {name, text},
+      has(page, expr) -> boolean /* e.g. "window.CrmRfq" */, fs, path }
+```
+- Every module uses its own `t.fresh()` context, so modules are independent.
+- `99-final` checks "no console errors" across all pages.
+- Fixtures use made-up names for unmatched rows (e.g. "Zeta Imaginary Pvt Ltd") and made-up amounts.
+
+| Owner | Files |
+|---|---|
+| A1 | `tests/smoke.js`, `tests/checks/10-shell.js`, `tests/checks/15-customers-core.js`, `tests/checks/99-final.js`, `tests/unit/csv-unit.js`, `tests/unit/store-unit.js` |
+| A2 | `tests/checks/20-customers.js` |
+| A3 | `tests/checks/40-dashboard.js`, `tests/unit/dashboard-unit.js` |
+| A4 | `tests/checks/50-rfqs.js`, `tests/unit/rfqs-unit.js` |
+| A5 | `tests/checks/60-schedule.js`, `tests/checks/70-money.js`, `tests/unit/money-unit.js`, `tests/unit/schedule-unit.js` |
+| A6 | `tests/checks/30-export.js`, `tests/unit/export-unit.js` |
+
+Cross-module checks (e.g. a dashboard number that needs `CrmRfq`) start with `if (!(await t.has(page, "window.CrmRfq"))) return t.skip(name, "needs A4")`. They must PASS after merge (`--strict`).
+
+### 6.2 Acceptance checks per task (exact names)
+
+**A1 · 10-shell**
+- `first visit opens the Dashboard tab`, `tab order is Dashboard, Customers, RFQs, Schedule, Export`
+- `tab choice survives a refresh`, `arrow keys move between tabs`
+- `logo shows in the header on a white badge` (naturalWidth > 0, badge background white)
+- `favicon is a 64px PNG`
+- `tab bar fits at 375px without page scroll`
+- `every panel stub mounts without console errors`
+
+**A1 · 15-customers-core** (the 27 Phase 1 checks, adapted: open the Customers tab first; duplicate name uses `#formErr`; the export key set includes `id`; export via `#tab-export` then `#export`)
+- `rows carry a stable data-id`
+- `Phase 1 edits move to the new store` / `... survive a refresh and the notice does not repeat`
+- `extra filter chip shows, clears with ×, and survives a refresh`
+- `customers.json export never includes notes or amounts`
+
+**A1 · units**
+- csv-unit: parse (quotes, embedded commas and newlines, BOM, `;` and tab delimiters, CRLF); `findHeader` (title rows above the header, missing fields reported); `parseAmount` (`"1,23,456.78"`→123456.78, `"(1,200)"`→-1200, `"−500"`→-500, `"2,000 Cr"`→-2000, `"₹ 3,400"`→3400, `""`→null, `"12a"`→not ok); `parseDate` (`"05/08/2026"`→2026-08-05, `"12-Jul-2026"`, `"31/02/2026"`→not ok); `safeCell`; `toCSV`/`toTSV`.
+- store-unit: slug for all 42 names is unique; `nameKey("Laxmi Agni Components & Forging Pvt.Ltd-V")` equals `nameKey("LAXMI AGNI COMPONENTS AND FORGING PRIVATE LIMITED V")`; `lastBucket`; `fuKind`.
+
+**A1 · 99-final**
+- `no innerHTML in any js file`, `CSP meta present`
+- `blocked storage shows a warning`
+- `no console errors`
+
+**A2 · 20-customers**
+- P2-A:
+  - `Done button only on rows with a follow-up`
+  - `Done with a note and next date moves the follow-up` (ZF at -3, "In 1 week": +7, "In 7 days", row not overdue)
+  - `Done adds a log entry and sets Last contacted today`
+  - `Done survives a refresh`
+  - `Done without a next date clears the follow-up`
+  - `Done refuses a past next date`
+  - `Esc closes Done without saving`
+- P2-B:
+  - `Notes drawer adds an entry at the top`
+  - `note is limited to 500 characters`
+  - `older-dated note sorts below newer ones`
+  - `notes and badge survive a refresh`
+  - `note text is shown as text, not HTML`
+  - `empty note is refused`
+- P2-C:
+  - `edit changes name, contact, phone and city`
+  - `rename keeps the same id`
+  - `renamed customer keeps follow-up, status and notes`
+  - `edits survive a refresh`
+  - `edited contact is no longer shown as a guess`
+  - `rename to an existing name is refused`
+  - `empty name is refused`
+- Money column (skip without `CrmMoney`):
+  - `money column appears only after a money import`
+  - `overdue amount is red and says Overdue`
+  - `sort by overdue puts the largest first`
+- Layout:
+  - `no sideways scroll at 375px with the Notes drawer open` / `... Done dialog open`
+  - `focus returns to the Notes button after closing the drawer`
+
+**A6 · 30-export** + export-unit
+- `Export tab shows customers, RFQs, visits, backup and data cards`
+- `CSV starts with a BOM and has the exact header` (`﻿"Customer","Contact person","Phone","City","Last order","Follow-up","Status","Last contacted","Notes count"`)
+- `CSV respects the current filter` / `"All customers" has every row`
+- `no notes unless ticked` / `no amounts unless ticked`
+- `both boxes are unticked after a refresh` / `scope survives a refresh`
+- `CSV guards formulas`
+- `CSV has no emails or GST`
+- `Copy puts tab-separated rows on the clipboard` / `Copy falls back when the clipboard is blocked`
+- `backup has notes, RFQs and visits but no money`
+- `Clear imported money data removes amounts after confirm`
+- `RFQs CSV has the expected header and respects the RFQ filter`
+- `automatic Sheet export is disabled and marked coming next`
+- `no sideways scroll on the Export tab at 375px`
+
+**A3 · 40-dashboard** + dashboard-unit (compute on a hand-made set: attention order, upcoming groups, buckets, state order, contact counts, empty log). Expected numbers are **computed from `t.data`**, never hard-coded.
+- `customer tiles match the data`
+- `every customer tile opens the matching filter` (loop over 9 tiles: the row count equals the tile)
+- `Overdue tile is red and says "Needs a call now"`
+- `Attention lists overdue oldest first, then due today`
+- `Done from Attention opens the Done dialog` / `saving removes it from Attention and lowers Overdue`
+- `Notes from Attention opens the drawer`
+- `follow-up day group opens the matching filter`
+- `status legend, last-order bars and state bars open the matching filter` (the row count equals the number)
+- `"Count days from" choice changes the buckets and survives a refresh`
+- `activity empty state shows with no call log` / `recent activity lists a new note`
+- `contact tiles open the matching filter`
+- `money card shows the empty state before import`
+- *(needs A5)* `money tiles show totals after import`, `aging legend opens customers with that bucket`, `top 5 overdue are clickable and sorted`, `Hide amounts masks every amount and survives a refresh`
+- *(needs A4)* `RFQ funnel counts per stage open the RFQ table`, `Quote overdue tile is red and opens the matching RFQs`, `Released parts counts Finalised and later and opens them`, `released parts note asks the user to confirm`
+- *(needs A5)* `next 7 days visits list opens the Schedule day`, `late orders tile is red and opens late orders`
+- `dashboard survives a refresh`
+- `no sideways scroll on the Dashboard at 375px`
+- `print view shows the logo, hides tabs and note text`
+- `every dashboard number is a button`
+
+**A4 · 50-rfqs** + rfqs-unit (`rfqStats`: byStage, released, valueQuoted/valueWon, quoteOverdue, quotedToPoPct, avgDaysToQuote, stuck)
+- `new RFQ appears in Received with history`
+- `customer must be picked from the list`
+- `▶ moves a card to the next stage and logs history with today's date`
+- `◀ moves it back`
+- `focus follows the moved card`
+- `stage select in the table moves the RFQ`
+- `quote overdue shows red text "Quote overdue by N days"` / `quote due today is orange`
+- `action overdue shows red text`
+- `board and table views survive a refresh` / `RFQs and history survive a refresh`
+- `stage and flag filters survive a refresh`
+- `duplicate RFQ no is refused`
+- `mark lost hides it unless Show lost`
+- `RFQ import matches headers and upserts by RFQ no` (a CSV with 3 rows, one existing: 1 update + history "Imported")
+- `RFQ import shows a clear error for missing columns`
+- `unmatched customer is kept as text and flagged`
+- `board becomes stacked sections at 375px without page scroll`
+- `RFQ text is shown as text, not HTML`
+
+**A5 · 60-schedule** + schedule-unit
+- `month grid starts on Monday and marks today`
+- `add a visit and it shows on its day and in the agenda`
+- `visits survive a refresh`
+- `past visit not done is red and says "Not done"`
+- `marking done can add a call-log entry and updates Last contacted`
+- `arrow keys move between days`
+- `agenda list replaces the grid at 375px` / `no sideways scroll`
+- `sub-view choice survives a refresh`
+- `orders import replaces orders and shows "Data as of"`
+- `late order is red and says "Late by N days"`
+- `done words mark orders done`
+- `Late chip count equals rows`
+- `Clear orders empties the list after confirm`
+- `orders import error lists missing columns`
+
+**A5 · 70-money** + money-unit (`moneyStats`: totals include unmatched rows, per-customer uses matched rows, same-name rows summed, overduePct)
+- `money import recognises an AGING file`
+- `wrong file shows the missing-columns error and blocks import`
+- `bad number blocks import with the row number`
+- `total rows are skipped`
+- `unmatched names are listed and a manual match is remembered next time`
+- `amounts survive a refresh`
+- `"Data as of" shows the chosen date` / `stale data shows the orange warning`
+- `LIVE_POSITION import adds outstanding without removing aging`
+- `Clear imported money data removes it`
+- `amounts never appear in the customers.json export or the backup`
+
+### 6.3 Review checklist (stage A, lead then user, on GitHub Pages, desktop + phone)
+1. Tabs work and are remembered.
+2. Every dashboard number opens the right list.
+3. Done, notes, edit and rename work and survive a refresh.
+4. Import real AGING and LIVE_POSITION CSVs: totals match the sheet's own totals to the rupee. Unmatched names make sense. The as-of date is right.
+5. RFQ board moves are logged. Released parts make sense (confirm the assumption).
+6. Visits calendar and agenda work. An orders CSV (if available) shows late orders correctly.
+7. CSV opens in Google Sheets; copy and paste lines up.
+8. Print preview of the Dashboard: no note text, and amounts hidden when the toggle is on.
+9. Logo badge and favicon look right.
+10. `git status` shows no CSV or backup files.
+
+---
+
+## 7. Build breakdown (Sonnet agents)
+
+Ownership is exclusive while a task runs. Each task uses its own branch `phase2/<task>` and pushes it. It reports the commit and file links plus the live-view link (CLAUDE.md "Links at every step"). The lead merges.
+
+### Stage A
+
+| Task | Owns | Starts after | Parallel with |
+|---|---|---|---|
+| **A1 Shell + store + split** | `index.html`, `css/base.css`, `js/store.js`, `js/csv.js`, `js/ui.js`, `js/importer.js`, `js/app.js`, `js/boot.js`, the first version of `js/customers.js` + `css/customers.css` (Phase 1 features ported), stubs of every other module file, `assets/favicon-64.png`, `.gitignore`, the runner + A1 tests | design approved | none |
+| **A2 Customers features** (P2-A/B/C + money column) | `js/customers.js`, `css/customers.css`, `tests/checks/20-customers.js` | A1 merged | A3–A6 |
+| **A3 Dashboard** (P2-F + released-parts card) | `js/dashboard.js`, `css/dashboard.css`, `tests/checks/40-dashboard.js`, `tests/unit/dashboard-unit.js` | A1 merged | A2, A4–A6 |
+| **A4 RFQs** (P2-H/J) | `js/rfqs.js`, `css/rfqs.css`, `tests/checks/50-rfqs.js`, `tests/unit/rfqs-unit.js` | A1 merged | A2, A3, A5, A6 |
+| **A5 Schedule + Money import** (P2-I, P2-G) | `js/schedule.js`, `css/schedule.css`, `js/money.js`, `css/money.css`, `tests/checks/60-schedule.js`, `tests/checks/70-money.js`, `tests/unit/money-unit.js`, `tests/unit/schedule-unit.js` | A1 merged (+ the lead's exact AGING/LIVE_POSITION headers when available) | A2–A4, A6 |
+| **A6 Export + integration** (P2-E) | `js/export.js`, `css/export.css`, `tests/checks/30-export.js`, `tests/unit/export-unit.js`; after all merges: `README.md` + the `--strict` integration run | A1 merged; integration after A2–A5 | A2–A5 |
+
+Order: **A1 → (A2 ∥ A3 ∥ A4 ∥ A5 ∥ A6) → merge in the order A2, A5, A4, A3, A6, running the full suite after each merge → A6 integration (`--strict`, zero SKIP) + README → the user reviews on Pages → GO for stage B.**
+
+**A1 owns the split.**
+- Step 1: move the inline `<style>` into `css/base.css` (+ the Customers parts into `css/customers.css`) and the inline `<script>` into `js/app.js` / `js/customers.js`, with **no behaviour change**. The 27 old checks must pass at this point.
+- Step 2: build the Store, the contracts (§4) and the tabs. Each stub registers its panel with a "Coming in this build" placeholder.
+- If anyone needs a contract change, they report it to the lead. Only A1 (in a small follow-up commit) changes `store.js`, `app.js`, `csv.js`, `ui.js`, `importer.js`, `base.css` or `index.html`; the others rebase.
+
+What each task reports: test output (PASS/SKIP counts), the API as built (or "matches §4"), screenshots at 1280px and 375px (and print for A3) saved outside the repo with their paths listed, and the branch, commit and live links.
+
+**A1 inputs and acceptance**
+- **Inputs:** §1–§4, §5.1, §5.2 (Phase 1 parts + extra filter), §5.8, §6.1, and the A1 checks.
+- **Acceptance:** A1 checks pass; no CSP violations; the favicon looks right; Phase 1 behaviour is unchanged.
+
+**A2–A6 inputs and acceptance**
+- **Inputs:** their §5 section, §4 contracts, and their §6.2 checks.
+- **Acceptance:** their checks pass on their branch (cross-module ones may SKIP) and every earlier check still passes. After merge everything passes with `--strict`.
+
+### Stage B (after GO)
+
+| Task | Owns | Notes |
+|---|---|---|
+| **B1 Backend** | `supabase/migrations/*.sql`, `supabase/verify_rls.sql`, `scripts/make-seed.js` | §8.1–8.3; the lead creates the project (§8.2) |
+| **B2 Data layer + login** | `js/store.js` (SupabaseBackend, queue, cache, auth), `config.js`, `js/auth.js` (new), `css/auth.css`, the CSP update in `index.html`, `tests/checks/80-auth-queue.js` | §8.4; fake auth + offline tests, no network |
+| **B3 Deploy + live check** | `config.js` (URL + key) | §8.5 |
+
+### CLAUDE.md wording the lead should update (this agent did not edit it)
+- Rule 1: "Customers are seeded from `customers.json`. Edits, notes, RFQs, visits, orders and imported amounts live in this browser (stage A) or in the private database (stage B). **Amounts and notes are never committed**; `*.csv` and backups are gitignored. Imports are CSVs downloaded from the sheet; the page never writes to the sheet."
+- Rule 2: "... included in an export: customer fields in customers.json; notes, RFQs, visits and orders in the backup. Amounts are re-imported from the sheet. The 'Include notes' and 'Include amounts' boxes are deliberately not remembered."
+- Rule 3: "`tests/smoke.js` runs `tests/unit/*` and `tests/checks/*`; each task adds its own module; use `--strict` before pushing to main."
+- Rule 8: "Only the tab bar and the desktop RFQ board may scroll sideways inside themselves."
+- New gotchas:
+  - "`display` on a `<dialog>` shows it when closed; style `dialog[open]` only."
+  - "Wait for `body[data-ready]`, not `#rows tr`."
+  - "Serve `.js` as `text/javascript` in the test server."
+  - "Imported dates are day-first (DD/MM)."
+
+---
+
+## 8. Stage B design (kept for after GO)
+
+### 8.1 SQL migration `supabase/migrations/20261019000100_phase2.sql` (customers, call log, security; copy as is)
 
 ```sql
--- Varsha CRM Phase 2 schema (stage B). Run once as the project owner.
 create extension if not exists pgcrypto;
-create schema if not exists private;              -- NOT an exposed API schema
+create schema if not exists private;
 revoke all on schema private from public, anon;
 grant usage on schema private to authenticated;
 
 create or replace function private.ist_today() returns date
-language sql stable set search_path = '' as $$
-  select (now() at time zone 'Asia/Kolkata')::date
-$$;
+language sql stable set search_path = '' as $$ select (now() at time zone 'Asia/Kolkata')::date $$;
 
 create table public.allowed_users (
-  email      text primary key check (email = lower(btrim(email)) and email like '%_@_%._%'),
-  note       text not null default '',
-  created_at timestamptz not null default now()
-);
+  email text primary key check (email = lower(btrim(email)) and email like '%_@_%._%'),
+  note text not null default '', created_at timestamptz not null default now());
 
 create table public.customers (
-  id           text primary key
-               check (id ~ '^[a-z0-9]+(-[a-z0-9]+)*$' and char_length(id) <= 64),
+  id           text primary key check (id ~ '^[a-z0-9]+(-[a-z0-9]+)*$' and char_length(id) <= 64),
   name         text not null check (char_length(btrim(name)) between 1 and 120),
   contact      text not null default '' check (char_length(contact) <= 80),
   contact_from text not null default '' check (contact_from in ('', 'email')),
   city         text not null default '' check (char_length(city) <= 60),
   state        text not null default '' check (char_length(state) <= 60),
   phone        text not null default '' check (char_length(phone) <= 30),
-  last_order   date,
-  follow_up    date,
+  last_order   date, follow_up date,
   status       text not null default 'Active' check (status in ('Active', 'Follow up', 'At risk')),
   disputed     boolean not null default false,
   source       text not null default 'manual' check (source in ('seed', 'manual')),
   created_at   timestamptz not null default now(),
   updated_at   timestamptz not null default now(),
-  updated_by   text not null default ''
-);
+  updated_by   text not null default '');
 create unique index customers_name_lower_uniq on public.customers (lower(name));
 create index customers_follow_up_idx on public.customers (follow_up) where follow_up is not null;
 
 create table public.call_log (
-  id             uuid primary key default gen_random_uuid(),
-  customer_id    text not null references public.customers (id) on delete cascade,
-  at             date not null default private.ist_today(),
-  type           text not null check (type in ('Call', 'Visit', 'Email', 'Telegram', 'Note')),
-  note           text not null default '' check (char_length(note) <= 500),
-  done_follow_up date,
-  next_follow_up date,
-  created_at     timestamptz not null default now(),
-  created_by     text not null default ''
-);
+  id uuid primary key default gen_random_uuid(),
+  customer_id text not null references public.customers (id) on delete cascade,
+  at date not null default private.ist_today(),
+  type text not null check (type in ('Call', 'Visit', 'Email', 'Telegram', 'Note')),
+  note text not null default '' check (char_length(note) <= 500),
+  done_follow_up date, next_follow_up date,
+  created_at timestamptz not null default now(), created_by text not null default '');
 create index call_log_customer_at_idx on public.call_log (customer_id, at desc, created_at desc);
-create index call_log_at_idx on public.call_log (at desc);     -- dashboard "recent activity"
+create index call_log_at_idx on public.call_log (at desc);
 
 create or replace function private.customers_before_write() returns trigger
 language plpgsql set search_path = '' as $$
 begin
   new.name := btrim(new.name);
   if tg_op = 'INSERT' then
-    new.created_at := now();
-    new.updated_at := new.created_at;                -- equal = never edited
+    new.created_at := now(); new.updated_at := new.created_at;
     new.updated_by := coalesce(auth.jwt() ->> 'email', 'seed');
   else
     if new.id <> old.id then raise exception 'Customer id cannot change' using errcode = '22023'; end if;
-    new.created_at := old.created_at;
-    new.source     := old.source;
-    new.updated_at := clock_timestamp();
-    new.updated_by := coalesce(auth.jwt() ->> 'email', old.updated_by);
+    new.created_at := old.created_at; new.source := old.source;
+    new.updated_at := clock_timestamp(); new.updated_by := coalesce(auth.jwt() ->> 'email', old.updated_by);
   end if;
   return new;
 end $$;
@@ -236,11 +1052,8 @@ create trigger customers_before_write before insert or update on public.customer
 create or replace function private.call_log_before_insert() returns trigger
 language plpgsql set search_path = '' as $$
 begin
-  if new.at > private.ist_today() + 1 then
-    raise exception 'Note date cannot be in the future' using errcode = '22023';
-  end if;
-  new.created_at := now();
-  new.created_by := coalesce(auth.jwt() ->> 'email', 'seed');
+  if new.at > private.ist_today() + 1 then raise exception 'Note date cannot be in the future' using errcode = '22023'; end if;
+  new.created_at := now(); new.created_by := coalesce(auth.jwt() ->> 'email', 'seed');
   return new;
 end $$;
 create trigger call_log_before_insert before insert on public.call_log
@@ -248,10 +1061,8 @@ create trigger call_log_before_insert before insert on public.call_log
 
 create or replace function private.is_allowed() returns boolean
 language sql stable security definer set search_path = '' as $$
-  select exists (select 1 from public.allowed_users a
-                 where a.email = lower(coalesce(auth.jwt() ->> 'email', '')))
-     and exists (select 1 from auth.users u
-                 where u.id = auth.uid() and u.email_confirmed_at is not null)
+  select exists (select 1 from public.allowed_users a where a.email = lower(coalesce(auth.jwt() ->> 'email', '')))
+     and exists (select 1 from auth.users u where u.id = auth.uid() and u.email_confirmed_at is not null)
 $$;
 revoke all on function private.is_allowed() from public, anon;
 grant execute on function private.is_allowed() to authenticated;
@@ -261,28 +1072,21 @@ grant execute on function private.ist_today() to authenticated;
 create or replace function public.am_i_allowed() returns boolean
 language sql stable security invoker set search_path = '' as $$ select private.is_allowed() $$;
 
-create or replace function public.mark_done(
-  p_log_id uuid, p_customer_id text, p_at date, p_type text, p_note text, p_next date)
+create or replace function public.mark_done(p_log_id uuid, p_customer_id text, p_at date, p_type text, p_note text, p_next date)
 returns jsonb language plpgsql security invoker set search_path = '' as $$
-declare
-  v_today date := private.ist_today();
-  v_prev  date;
-  v_cust  public.customers;
-  v_log   public.call_log;
+declare v_today date := private.ist_today(); v_prev date; v_cust public.customers; v_log public.call_log;
 begin
   if p_next is not null and p_next < v_today then
-    raise exception 'Next follow-up cannot be in the past' using errcode = '22023';
-  end if;
+    raise exception 'Next follow-up cannot be in the past' using errcode = '22023'; end if;
   select follow_up into v_prev from public.customers where id = p_customer_id for update;
   if not found then raise exception 'Customer not found' using errcode = 'P0002'; end if;
   insert into public.call_log (id, customer_id, at, type, note, done_follow_up, next_follow_up)
   values (p_log_id, p_customer_id, coalesce(p_at, v_today), p_type, coalesce(p_note, ''), v_prev, p_next)
-  on conflict (id) do nothing
-  returning * into v_log;
+  on conflict (id) do nothing returning * into v_log;
   if v_log.id is not null then
     update public.customers set follow_up = p_next where id = p_customer_id returning * into v_cust;
-  else                                               -- replay of an op that already landed
-    select * into v_log  from public.call_log  where id = p_log_id;
+  else
+    select * into v_log from public.call_log where id = p_log_id;
     select * into v_cust from public.customers where id = p_customer_id;
   end if;
   return jsonb_build_object('customer', to_jsonb(v_cust), 'log', to_jsonb(v_log));
@@ -294,34 +1098,27 @@ grant execute on function public.mark_done(uuid, text, date, text, text, date) t
 
 revoke all on public.customers, public.call_log, public.allowed_users from anon, authenticated;
 grant select, delete on public.customers to authenticated;
-grant insert (id, name, contact, contact_from, city, state, phone, last_order, follow_up, status, disputed)
-  on public.customers to authenticated;
-grant update (name, contact, contact_from, city, state, phone, last_order, follow_up, status, disputed)
-  on public.customers to authenticated;
+grant insert (id, name, contact, contact_from, city, state, phone, last_order, follow_up, status, disputed) on public.customers to authenticated;
+grant update (name, contact, contact_from, city, state, phone, last_order, follow_up, status, disputed) on public.customers to authenticated;
 grant select on public.call_log to authenticated;
-grant insert (id, customer_id, at, type, note, done_follow_up, next_follow_up)
-  on public.call_log to authenticated;
+grant insert (id, customer_id, at, type, note, done_follow_up, next_follow_up) on public.call_log to authenticated;
 
 alter table public.allowed_users enable row level security;     -- no policies on purpose
-alter table public.customers     enable row level security;
-alter table public.call_log      enable row level security;
-create policy customers_select on public.customers for select to authenticated
-  using ((select private.is_allowed()));
-create policy customers_insert on public.customers for insert to authenticated
-  with check ((select private.is_allowed()));
+alter table public.customers enable row level security;
+alter table public.call_log enable row level security;
+create policy customers_select on public.customers for select to authenticated using ((select private.is_allowed()));
+create policy customers_insert on public.customers for insert to authenticated with check ((select private.is_allowed()));
 create policy customers_update on public.customers for update to authenticated
   using ((select private.is_allowed())) with check ((select private.is_allowed()));
 create policy customers_delete on public.customers for delete to authenticated
   using ((select private.is_allowed()) and source = 'manual');
-create policy call_log_select on public.call_log for select to authenticated
-  using ((select private.is_allowed()));
-create policy call_log_insert on public.call_log for insert to authenticated
-  with check ((select private.is_allowed()));
+create policy call_log_select on public.call_log for select to authenticated using ((select private.is_allowed()));
+create policy call_log_insert on public.call_log for insert to authenticated with check ((select private.is_allowed()));
 
--- The one view the future Telegram reminder (11:00 IST = 05:30 UTC) reads:
+-- The one view for the future Telegram reminder (11:00 IST = 05:30 UTC), service_role only:
 create view public.v_followups_due with (security_invoker = true) as
 select c.id, c.name, c.contact, c.phone, c.city, c.status, c.follow_up,
-       private.ist_today() - c.follow_up                                   as days_overdue,
+       private.ist_today() - c.follow_up as days_overdue,
        case when c.follow_up < private.ist_today() then 'overdue' else 'today' end as bucket,
        (select max(l.at) from public.call_log l where l.customer_id = c.id) as last_contacted
 from public.customers c
@@ -330,799 +1127,112 @@ order by c.follow_up, c.name;
 revoke all on public.v_followups_due from public, anon, authenticated;
 grant select on public.v_followups_due to service_role;
 ```
-Notes:
-- `(select private.is_allowed())` is evaluated once per statement.
-- `service_role` bypasses RLS and is only for the future server function. Its key is never in git, `config.js` or chat.
-- The Advisor shows one expected INFO ("RLS enabled, no policy" on `allowed_users`). Any WARN or ERROR must be fixed.
 
-Seed (stage B):
-- `node scripts/make-seed.js customers.json > supabase/.generated/seed.sql` (gitignored).
-- One transaction of `INSERT ... ON CONFLICT (id) DO NOTHING`, `source='seed'`, `'` doubled, empty dates -> `NULL`.
-- It uses `require("../store.js").slug`.
-- Seed from the freshest data: the user clicks "Download customers.json" on the stage A page first and hands it over.
+**Second migration `20261019000200_phase2_more.sql`** (B1 writes it from these column lists; the same pattern applies to each table: `revoke all ... from anon, authenticated`; grant select/insert/update/delete to authenticated; RLS on; one `for all to authenticated using ((select private.is_allowed())) with check ((select private.is_allowed()))` policy; an `updated_at` trigger like the customers one):
+- `rfqs` (columns as in §2.5; `stage` check in STAGES; unique index on `lower(rfq_no)` where `rfq_no <> ''`; `customer_id` references customers on delete restrict).
+- `rfq_history` (insert and select only, no update or delete; FK to rfqs on delete cascade).
+- `visits` (§2.6; FK customers on delete restrict).
+- `orders` (§2.6; plus `import_id uuid`) and `order_imports(id, file_name, file_date, as_of, imported_at, rows)`.
+- `money_imports(id, kind check in ('aging','live'), file_name, file_date, as_of, imported_at)` and `money_rows(import_id, source_name, customer_id null, b1_30, b31_60, b61_90, b90, overdue, outstanding)`, numeric(14,2). Only the latest import per kind is shown; older ones keep the history that the deferred "payment trend" idea needs.
+- `aliases(source_name text pk, customer_id text null)`.
 
----
+Seed: `node scripts/make-seed.js customers.json > supabase/.generated/seed.sql` (gitignored). It is one transaction of `INSERT ... ON CONFLICT (id) DO NOTHING`, `source='seed'`, and uses `require("../js/store.js").slug`. Seed from the user's latest stage A export, and import the stage A backup with a small B1 script.
 
-## 3. Security
-
-### 3.1 Stage A
-- There is no backend, no keys and no login. Data stays in the user's browser.
-- The public page code holds nothing secret.
-- Rules that still apply:
-  - `textContent` only. A test greps for `innerHTML`.
-  - The `customers.json` export has exactly these keys: `id,name,contact,contactFrom,city,state,phone,last,followUp,status,disputed`. No notes.
-  - The backup and CSV files are gitignored: `.gitignore` gets `varsha-crm-backup-*.json`, `varsha-crm-*.csv`, `supabase/.generated/`, `.env*`, `node_modules/` (A1 creates it).
-- CSP meta tag, stage A:
-  ```html
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self'; base-uri 'none'; form-action 'self'; object-src 'none'">
-  ```
-  Bar widths are set with `el.style.width = ...` (CSSOM). CSP does not block that.
-- Known exposure that already exists: the committed `customers.json` (company names, 10 contact names, 42 phones) is public. See Open Question 1.
-
-### 3.2 Stage B: who can do what
+### 8.2 Dashboard settings (the lead does these)
+1. New project: free plan, **ap-south-1**, DB password kept in a password manager.
+2. Auth -> Email: on. **Sign-ups OFF. Confirm email ON.** Minimum password length 12, with lower, upper and digits. Turn off phone, anonymous and all OAuth providers.
+3. URL configuration: Site URL `https://erpvarsha-star.github.io/vfpl-crm/` (+ `http://localhost:8080/**`).
+4. Users -> Add user `<ALLOWED_EMAIL>` with **Auto Confirm**, then `insert into public.allowed_users (email, note) values (lower('<ALLOWED_EMAIL>'), 'owner');` (user first, then the allowlist).
+5. Keep the default rate limits. Turn off `pg_graphql`. Expose the `public` schema only. Max rows 1000 (the store pages with `range()`).
+6. Key: publishable `sb_publishable_...`, or the legacy anon JWT. **Never** service_role or `sb_secret_` in `config.js`; a smoke guard checks this.
+7. Emergency lock: `revoke all on public.customers, public.call_log from authenticated;` (+ the other tables). Never disable RLS.
 
 | Caller | Can | Cannot |
 |---|---|---|
-| anon (public key only) | Auth endpoints: sign in (rate limited); reset (only if enabled) | Sign up (off). Any table, view or RPC (revoked: 401/42501). See `allowed_users` |
-| Signed in, not allowlisted | Sign in; `am_i_allowed()` = false, so the page shows "not allowed" | See rows (0), insert (42501), update or delete (0 rows), `mark_done` ("Customer not found") |
-| Allowed + confirmed | Read all; add, edit and remove hand-added customers; add log entries; mark done | Change `id`, `source`, `created_at`, `updated_*`; delete seed rows; edit or delete log entries; read `allowed_users` or the view |
-| service_role (future server only) | Everything; reads `v_followups_due` | Never in the browser or git |
+| anon | auth endpoints (sign in, rate limited) | sign up; any table, view or RPC (401/42501) |
+| signed in, not allowlisted | sign in, `am_i_allowed()` = false | any row (0 rows / 42501) |
+| allowed + confirmed | everything the UI does | change ids, `source` or timestamps; delete seed customers; edit or delete log or history rows; read `allowed_users` |
+| service_role (server only) | everything (bypasses RLS) | never in the browser or git |
 
-### 3.3 Stage B dashboard settings (the lead does these)
-1. New project: free plan, **ap-south-1**, strong DB password kept in a password manager.
-2. Auth -> Providers -> Email: on. **Allow new users to sign up: OFF.** **Confirm email: ON.** Secure password change on. Minimum password length 12, with lower, upper and digits.
-3. Turn off phone, anonymous and all OAuth providers.
-4. Auth -> URL Configuration: Site URL `https://erpvarsha-star.github.io/vfpl-crm/`. Redirects: that URL plus `http://localhost:8080/**`.
-5. Auth -> Users -> Add user -> Create new user: `<ALLOWED_EMAIL>`, strong password, **Auto Confirm**. Then run `insert into public.allowed_users (email, note) values (lower('<ALLOWED_EMAIL>'), 'owner');`. Create the user first, then the allowlist row.
-6. Rate limits: keep the defaults (per-IP sign-in limits; built-in SMTP is about 2 emails per hour). CAPTCHA (Turnstile, free) later, if needed.
-7. Extensions: turn `pg_graphql` **off**. Exposed schemas: `public` only. Max rows stays 1000 (the store pages).
-8. Key: the publishable key (`sb_publishable_...`), or the legacy anon JWT if the pinned supabase-js has trouble with it.
-   Emergency lock: `revoke all on public.customers, public.call_log from authenticated;`. Never disable RLS.
+### 8.3 `verify_rls.sql` (B1)
+- `DO` blocks under `set local role anon` / `authenticated` with `set_config('request.jwt.claims', …)`.
+- Anon is denied on every table, view and RPC.
+- A stranger sees 0 rows and is refused on insert, `allowed_users` and `mark_done`.
+- The allowed user (claims from `auth.users where email = '<ALLOWED_EMAIL>'`) can read, insert, update, log, `mark_done` and delete a `zz-rls-probe` row, but cannot delete a seed row, change an id, or update a log or history row.
+- Everything is rolled back; the script ends with `select 'ALL RLS CHECKS PASSED'`.
 
-### 3.4 Stage B browser additions
-- CSP widens to `script-src 'self' https://cdn.jsdelivr.net; connect-src 'self' https://*.supabase.co wss://*.supabase.co`.
-- `@supabase/supabase-js@2.49.4` UMD, loaded dynamically by `store.js` only when configured, with `integrity` (SRI sha384, computed by B2 with `curl -sL URL | openssl dgst -sha384 -binary | openssl base64 -A`) and `crossOrigin="anonymous"`. Plan B: vendor the file.
+### 8.4 Client (B2)
+- `@supabase/supabase-js@2.49.4` UMD from jsDelivr, loaded only when `config.js` is filled, with an SRI sha384 (`curl -sL URL | openssl dgst -sha384 -binary | openssl base64 -A`). Plan B: vendor the file.
 - `createClient(url, key, { auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true, storageKey: "varsha-crm-auth" } })`.
-- A smoke guard: `config.js` has no `sb_secret_` or `service_role`, and any JWT in it decodes to `role: "anon"`.
-
----
-
-## 4. Client design
-
-### 4.1 Files and load order (stage A)
-
-```html
-<head> ...
-  <link rel="icon" type="image/png" sizes="64x64" href="assets/favicon-64.png">
-  <link rel="stylesheet" href="dashboard.css?v=2">
-  <link rel="stylesheet" href="export.css?v=2">
-</head>
-<body> ...
-  <script src="store.js?v=2" defer></script>
-  <script src="export.js?v=2" defer></script>
-  <script src="dashboard.js?v=2" defer></script>
-  <script src="app.js?v=2" defer></script>   <!-- last: mounts the panels -->
-</body>
-```
-`?v=` defeats GitHub Pages caching; bump it on every release. Stage B adds `<script src="config.js?v=N" defer>` before `store.js`.
-
-### 4.2 `store.js`: public API (exact; the same in both stages)
-
-Every write:
-1. validates and resolves `{ok:false, error, field}` with no change if invalid;
-2. applies the change and fires `onChange("local")` synchronously;
-3. persists (stage A: localdb; stage B: saves the queue op, then sends);
-4. resolves `{ok:true, queued:false}` in stage A.
-
-```js
-window.Store = {
-  init(): Promise<{ mode: "local"|"supabase", user: {email:string}|null }>,  // stage A: {mode:"local", user:null}
-  load(): Promise<{ ok: boolean, error?: string }>,   // seed + migrate (§2.3, §2.4), then onChange("load")
-  status(): { mode, pending: number, storageOK: boolean, loadError: string },
-  onChange(cb: (reason: "load"|"local"|"server"|"queue"|"conflict"|"error"|"notice"|"auth", detail?) => void): void,
-
-  // pure helpers (also exported to Node)
-  todayISO(): string, addDays(iso, n): string, dayNum(iso): number,
-  fuKind(c, today): "overdue"|"today"|"week"|"later"|"none",        // moved from Phase 1 code
-  fuText(c, today): string,                                          // "Overdue by 3 days" / "Due today" / ...
-  lastBucket(c, refISO): "0-30"|"31-60"|"61-90"|"91+"|"never",       // days from c.last to refISO
-  slug(name, isTaken?): string,
-  validate(kind: "customer"|"log"|"done", f, selfId?): { ok: boolean, errors: {[field]: string} },
-
-  // reads (synchronous)
-  customers(): Customer[], get(id): Customer|undefined,
-  listLog(id): LogEntry[],             // newest first: at desc, createdAt desc, id desc
-  allLog(): LogEntry[],                // every entry, newest first (Dashboard activity)
-  logCount(id): number,
-  lastContacted(id): string,           // newest `at` among CONTACT_TYPES, or ""
-  latestOrder(): string,               // max(last) over all customers ("2026-07-12" today)
-
-  // writes
-  addCustomer(f: {name, contact?, phone?, city?, last?, followUp?, status?}): Promise<Result & {id?}>,
-  saveCustomer(id, f: {name, contact, phone, city, last}): Promise<Result>,   // P2-C
-  setStatus(id, status): Promise<Result>,
-  setFollowUp(id, isoOrEmpty): Promise<Result>,
-  removeCustomer(id): Promise<Result>,                 // only added === true
-  addLog(id, e: {at?, type, note}): Promise<Result & {entry?}>,
-  markDone(id, d: {type, note?, next?}): Promise<Result & {entry?}>,
-  pending(): number, flush(): Promise<void>,           // stage A: 0 / no-op
-
-  // auth (stage A stubs: current() -> {email:null, local:true}; others resolve {ok:true})
-  auth: { current(), signIn(email, pw), signOut(opts?), sendReset(email), setPassword(pw), onEvent(cb) },
-  isAllowed(): Promise<boolean>,                       // stage A: true
-
-  // export payloads
-  exportCustomersJson(): { note: string, customers: object[] },   // all customers, exact keys §3.1, no notes
-  exportBackup(): { format: "varsha-crm-backup-v1", exportedAt: string, note: string,
-                    customers: object[], callLog: object[] }
-};
-// Result = { ok: true, queued: boolean } | { ok: false, error: string, field?: string }
-// CONTACT_TYPES = ["Call","Visit","Email","Telegram","Note"]  (constant at the top of store.js; Open Question 2)
-```
-
-Validation (same messages everywhere):
-
-| Field | Rule | Message |
-|---|---|---|
-| name | trimmed, 1–120 chars | "Enter the customer name." |
-| name | unique, case-insensitive, ignoring `selfId` | "<name> is already in the list." |
-| contact | ≤ 80 | |
-| city | ≤ 60 | |
-| phone | ≤ 30 and `/^[0-9+()\-\s.\/–]*$/` | "Phone can only have digits, spaces and + ( ) - /" |
-| last, followUp | `''` or ISO | |
-| at | ISO and ≤ IST today | "Date cannot be in the future." |
-| next | `''` or ≥ IST today | "Next follow-up cannot be in the past." |
-| note | ≤ 500; required for `addLog`, optional for `markDone` | "Write a note." |
-| status / type | in their lists | |
-
-`saveCustomer` sets `contactFrom = ""` when `contact` changes.
-
-Storage blocked (stage A): localdb writes fail. Keep data in memory and show `#storageWarn` with the Phase 1 text: "This browser is blocking saved changes ... Use the Export tab to keep them."
-
-No `console.error` anywhere, because the smoke test fails on console errors. Use `console.warn`.
-
-### 4.3 `window.App`: the contract between panels (created in `app.js` by A1)
-
-```js
-window.App = {
-  goTo(tab: "dash"|"list"|"export"): void,             // switches tab, saves the view, moves focus to the panel heading
-  applyFilter(f: { view?, filter?, q?, extra? }): void, // RESETS view/filter/q/extra to defaults, applies f, goTo("list")
-  visibleCustomers(): Customer[],                       // the Customers tab list, filtered and sorted
-  viewSummary(): string,                                // "Follow-ups: Overdue · Status: All · Search: none · Last order 91+ days"
-  openDone(id): void, openNotes(id): void, openEdit(id): void,   // A1 stubs (no-op + console.warn); A2 implements
-  download(filename: string, text: string, mime: string): void,  // Blob + <a download>, as Phase 1
-  onRender(cb: () => void): void,                       // called after every Store change render
-  fmtDate(iso): string,                                 // "12 Oct 2026" (en-IN, as Phase 1)
-  today(): string                                       // IST today
-};
-```
-Mounting, in `app.js` boot:
-- `if (window.CrmDash) CrmDash.mount($("panel-dash"), App, Store); else` show the placeholder.
-- The same for `CrmExportUI` with `#panel-export`.
-- `app.js` binds the placeholder `#export` and `#backup` buttons **only when `!window.CrmExportUI`**. This prevents double handlers.
-
-### 4.4 Customers tab: the new "extra" filter (A1, in `app.js`)
-
-The Dashboard needs filters Phase 1 does not have. `state.extra` is `null` or one of:
-
-| `extra` | Matches | Chip label |
-|---|---|---|
-| `{kind:"last", value:"0-30"\|"31-60"\|"61-90"\|"91+"\|"never", ref:"YYYY-MM-DD"}` | `Store.lastBucket(c, ref) === value` | "Last order 61–90 days ago" / "No order on record" |
-| `{kind:"state", value:"Maharashtra"}` (`""` = not known) | `c.state === value` | "State: Maharashtra" / "State: not known" |
-| `{kind:"disputed"}` | `c.disputed` | "Disputed" |
-| `{kind:"contact", value:"7d"\|"30d"\|"stale30"}` | `lastContacted` within 0–6 days / 0–29 days / empty or ≥ 30 days ago | "Contacted in the last 7 days" / "... 30 days" / "Not contacted in 30+ days" |
-| `{kind:"due", value:"YYYY-MM-DD"}` | `c.followUp === value` | "Follow-up on Wed 21 Oct" |
-
-- It shows as a removable chip in a third `.bar` row: `<div class="bar" id="extraBar" hidden><span class="bar-label">Also</span><span class="chip on" id="extraChip"></span><button class="clr" id="extraClear" aria-label="Clear this filter">×</button></div>`.
-- It is saved in `varsha-crm-view-v1` and validated on load (unknown kinds are dropped).
-- The foot line includes it: "Showing 9 of 42 customers."
-
-View key additions: `tab` ("dash" default | "list" | "export"), `extra`, `exportScope` ("shown" default | "all"), `dashFrom` ("today" default | "data").
-
-### 4.5 Stage B additions (B2 owns; summary, details kept for later)
-
-- **SupabaseBackend**: same backend interface as LocalBackend.
-  - `fetchAll` pages with `range(i, i+999)`.
-  - `insertCustomer` and `insertLog` use `upsert(..., {onConflict:"id", ignoreDuplicates:true})`.
-  - `patchCustomer(id, patch, base)` uses `.update(patch).eq("id", id).lte("updated_at", base).select()`; 0 rows means a conflict.
-  - `markDone` uses `rpc("mark_done")`; `isAllowed` uses `rpc("am_i_allowed")`.
+- CSP: `script-src 'self' https://cdn.jsdelivr.net; connect-src 'self' https://*.supabase.co wss://*.supabase.co`.
+- SupabaseBackend implements the same backend calls (`fetchAll` paged by 1000; `upsert ignoreDuplicates` for inserts; conditional patch `.lte("updated_at", base)`; `rpc("mark_done")`; `rpc("am_i_allowed")`).
 - Errors are normalized to `{kind: "network"|"auth"|"denied"|"invalid"}`.
-- **Queue** `varsha-crm-queue-v1`: every write is saved before it is sent, and the queue is flushed serially.
-  - Network errors keep the op and show the banner "N changes not saved to the database yet ..." with Retry. Retries happen on `online`, on visibility, and every 30 s.
+- **Write queue** `varsha-crm-queue-v1`: saved before sending, flushed serially.
+  - Network errors keep the op and show the banner "N changes not saved to the database yet" with Retry. Retries happen on `online`, on visibility, and every 30 s.
   - Auth errors show sign-in and keep the queue.
-  - Invalid or denied errors drop the op, revert, and show an error banner.
-- **LWW**: a patch is conditional on the `updated_at` seen when it was edited.
-  - On conflict: if the op's client time is later than the server `updated_at`, re-send it unconditionally; otherwise keep the server value and show the notice "A newer change from another device was kept for <name>".
-  - After our own success, later queued ops for that row get their base rewritten.
-- **Cache** `varsha-crm-cache-v1` `{email, at, customers, log}`: render instantly and work offline. Cleared on sign-out.
-- **Auth screens**: sign in; denied; set new password after recovery. Forgot password only if `allowPasswordReset`. **No sign-up screen** (admins add users). The logo appears on the login card. Sign-out warns if anything is pending.
-- **Tests in stage B** use `LocalBackend` with `window.CRM_TEST = { fakeAuth, deniedUser }` and a `__crmFake.setOffline()` hook. No network.
+  - Invalid or denied errors drop the op, revert, and show an error.
+- **LWW**: the patch is conditional on the `updated_at` seen when it was edited.
+  - On conflict, the client's edit time is compared with the server `updated_at`: the later one wins. A notice says when the server value was kept.
+  - Later ops for the same row get their base rewritten after our own success.
+- Cache `varsha-crm-cache-v1` (per email, cleared on sign-out).
+- **Auth UI** (`js/auth.js`): sign in, denied, set new password after recovery. Forgot password only if `allowPasswordReset`. **No sign-up screen.** Logo at 72px. Sign-out warns about pending changes.
+- **Tests:** LocalBackend with `window.CRM_TEST = {fakeAuth, deniedUser}` and `__crmFake.setOffline()`. No network.
 
----
-
-## 5. UI specs
-
-### 5.1 Header and logo
-
-- `assets/varsha-logo.jpg`: the user's file (200×200 JPEG, white background), committed as is. **A1** copies it from the path the lead gives (it is in the session scratchpad `.../images/1.jpg` now).
-- **Header:** left of the "Varsha Forgings / Varsha CRM / date" block, a white rounded badge (the dark-grey wordmark is unreadable on navy):
-  ```html
-  <div class="brand">
-    <span class="logo-badge"><img src="assets/varsha-logo.jpg" alt="Varsha Forgings" width="64" height="64"></span>
-    <div> company / h1 / date (existing) </div>
-  </div>
-  ```
-  ```css
-  .brand { display: flex; align-items: center; gap: 16px; }
-  .logo-badge { flex: none; background: #fff; border-radius: 16px; padding: 6px; box-shadow: 0 6px 18px rgba(0,0,0,.25); line-height: 0; }
-  .logo-badge img { width: 64px; height: 64px; object-fit: contain; display: block; }
-  @media (max-width: 860px) { .logo-badge img { width: 44px; height: 44px; } .logo-badge { border-radius: 12px; padding: 4px; } }
-  ```
-- **Favicon:** `assets/favicon-64.png`, the circle only, with a transparent background. **A1 makes it** with Pillow (12.x is installed):
-  ```
-  python3 -I - <<'EOF'
-  from PIL import Image, ImageDraw
-  src = Image.open("assets/varsha-logo.jpg").convert("RGB")
-  w, h = src.size
-  pts = [(x, y) for y in range(int(h * .75)) for x in range(w) if min(src.getpixel((x, y))) < 200]
-  x0, x1 = min(p[0] for p in pts), max(p[0] for p in pts); y0, y1 = min(p[1] for p in pts), max(p[1] for p in pts)
-  s = max(x1 - x0, y1 - y0) + 2; cx, cy = (x0 + x1) // 2, (y0 + y1) // 2
-  crop = src.crop((cx - s // 2, cy - s // 2, cx - s // 2 + s, cy - s // 2 + s)).resize((256, 256), Image.LANCZOS).convert("RGBA")
-  mask = Image.new("L", (256, 256), 0); ImageDraw.Draw(mask).ellipse((2, 2, 253, 253), fill=255)
-  crop.putalpha(mask); crop.resize((64, 64), Image.LANCZOS).save("assets/favicon-64.png")
-  EOF
-  ```
-  In the current file the circle's bounding box is about x 43–165, y 23–145. The wordmark starts at y 156 and the top 75% cut excludes it. A1 opens the PNG and confirms it is the circle with the V.
-- **Login card (stage B):** the logo at 72px above "Varsha CRM".
-- **Dashboard print header:** see §5.8.
-
-### 5.2 Tabs
-
-```html
-<nav class="tabs no-print" role="tablist" aria-label="Sections">
-  <button role="tab" id="tab-dash"   aria-controls="panel-dash"   aria-selected="true">Dashboard</button>
-  <button role="tab" id="tab-list"   aria-controls="panel-list"   aria-selected="false" tabindex="-1">Customers</button>
-  <button role="tab" id="tab-export" aria-controls="panel-export" aria-selected="false" tabindex="-1">Export</button>
-</nav>
-<!-- banners #storageWarn, #syncErr, #notice, #unsaved sit here, above the panels -->
-<section id="panel-dash"   role="tabpanel" aria-labelledby="tab-dash"></section>
-<section id="panel-list"   role="tabpanel" aria-labelledby="tab-list" hidden> existing filters, rule, table, foot </section>
-<section id="panel-export" role="tabpanel" aria-labelledby="tab-export" hidden> placeholder: #export, #backup buttons </section>
-```
-- Default is Dashboard. The tab is saved in the view key and survives refresh.
-- Keys: Left/Right/Home/End move between tabs (roving tabindex). Enter/Space is native.
-- Style: tabs sit on the paper background below the header, with a 3px orange underline on the selected tab, navy text, and `--ink-dim` for the others. Each tab has a minimum height of 44px. At ≤ 860px each tab is `flex: 1`.
-- "+ Add customer" stays in the header on every tab. After saving it goes to the Customers tab (as in Phase 1, filters reset).
-- The Phase 1 `#unsaved` banner ("N changes saved in this browser only" + Download) is **removed**. It is replaced by the always-visible Export tab and a one-line foot note on the Customers tab: "Changes are saved in this browser. Use the Export tab to share or back them up." In stage B `#unsaved` returns as the pending-queue banner.
-
-### 5.3 Customers tab additions (row level)
-
-- **Last contacted:** under the name inside `td.name`: `<div class="lc">Last contacted 12 Oct 2026 · 7 days ago</div>`, or "Last contacted today" / "... yesterday". With none: "No contact logged yet". `--ink-dim`, `.8rem`, never coloured. It shows in the 375px card too.
-- **Actions** `td.act > .acts`, in order:
-  - `button.btn-sm.done-btn` "✓ Done": only if `followUp` is set. `aria-label="Mark follow-up done for <name>"`, `aria-haspopup="dialog"`.
-  - `button.btn-sm.notes-btn` "Notes" + `<span class="badge">3</span>` (badge only when > 0). `aria-label="Notes for <name>, 3 entries"`, or "no entries".
-  - `button.btn-sm.edit-btn` "Edit": `aria-label="Edit <name>"`.
-  - `.rm` × for hand-added rows only. Confirm: "Remove <name> from the list? Its N notes will be deleted too."
-- `<tr data-id="<id>">`. The actions `<th>` holds `<span class="sr">Actions</span>`, with a `.sr` visually-hidden class.
-- CSS:
-  ```css
-  .acts { display: flex; flex-wrap: wrap; gap: 6px; justify-content: flex-end; }
-  .btn-sm { font: inherit; font-size: .85rem; font-weight: 700; padding: 6px 10px; min-height: 36px; border-radius: 8px;
-            border: 1.5px solid var(--line); background: #fff; color: var(--navy); cursor: pointer; white-space: nowrap; }
-  .btn-sm:hover { border-color: var(--navy); }
-  .btn-sm:focus-visible { outline: 3px solid var(--orange); outline-offset: 2px; }
-  .badge { display: inline-block; min-width: 20px; margin-left: 6px; padding: 1px 6px; border-radius: 999px;
-           background: var(--navy); color: #fff; font-size: .75rem; text-align: center; }
-  .lc { font-size: .8rem; font-weight: 500; color: var(--ink-dim); margin-top: 3px; }
-  @media (max-width: 860px) { td.act, .acts { justify-content: flex-start; } .btn-sm { min-height: 40px; padding: 8px 12px; } }
-  ```
-
-### 5.4 Done dialog (P2-A)
-
-```html
-<dialog id="doneDlg" aria-labelledby="doneTitle" aria-describedby="doneDue">
-  <div class="dlg-head" id="doneTitle">Mark follow-up done</div>
-  <form id="doneForm" method="dialog" novalidate>
-    <p class="dlg-sub"><b id="doneName"></b> <span id="doneDue"></span></p>  <!-- "Follow-up was 16 Oct 2026 · Overdue by 3 days" -->
-    <label>How did you follow up?
-      <select name="type"><option selected>Call</option><option>Visit</option><option>Email</option><option>Telegram</option><option>Note</option></select></label>
-    <label>Outcome note (optional) <textarea name="note" maxlength="500" rows="3"></textarea>
-      <span class="count" id="doneCount">0/500</span></label>
-    <label>Next follow-up (optional) <input name="next" type="date"></label>   <!-- min = IST today -->
-    <div class="quick" role="group" aria-label="Quick next dates">
-      <button type="button" class="btn-sm" data-days="7">In 1 week</button>
-      <button type="button" class="btn-sm" data-days="14">In 2 weeks</button>
-      <button type="button" class="btn-sm" data-days="30">In 1 month</button></div>
-    <p class="note">Leave the date empty to clear the follow-up. Status does not change.</p>
-    <p class="err" id="doneErr" role="alert" hidden></p>
-    <div class="actions"><button class="btn" type="button" id="doneCancel">Cancel</button>
-      <button class="btn primary" type="submit">Save</button></div>
-  </form>
-</dialog>
-```
-- Save calls `Store.markDone(id, {type, note, next})` and closes the dialog. The row now shows the new follow-up (or none), the badge +1 and "Last contacted today".
-- The `#live` region (`aria-live="polite"`, visually hidden) says "Marked done. Next follow-up 26 Oct 2026." or "Marked done. No follow-up set."
-- Status never changes (rule 6).
-- A past `next` shows `#doneErr` and nothing is saved. Esc or Cancel closes without saving.
-- It works the same when opened from the Dashboard.
-
-### 5.5 Notes drawer (P2-B)
-
-```html
-<dialog id="notesDlg" class="drawer" aria-labelledby="notesTitle">
-  <div class="dlg-head drawer-head"><span id="notesTitle">Notes</span>
-    <button class="x" type="button" id="notesClose" aria-label="Close notes">×</button></div>
-  <div class="drawer-body">
-    <p class="dlg-sub" id="notesSub"></p>                 <!-- "<name> · Last contacted 12 Oct 2026 · 3 entries" -->
-    <form id="noteForm" novalidate>
-      <div class="two">
-        <label>Type <select name="type"><option>Call</option><option>Visit</option><option>Email</option><option>Telegram</option><option selected>Note</option></select></label>
-        <label>Date <input name="at" type="date"></label></div>   <!-- value = max = IST today -->
-      <label>Note <textarea name="note" maxlength="500" rows="3" required></textarea>
-        <span class="count" id="noteCount">0/500</span></label>
-      <p class="err" id="noteErr" role="alert" hidden></p>
-      <div class="actions"><button class="btn primary" type="submit">Save note</button></div>
-    </form>
-    <h3 class="hist-h">History</h3>
-    <ol class="log" id="notesList" aria-label="Notes history, newest first"></ol>
-    <p class="muted" id="notesEmpty">No notes yet.</p>
-  </div>
-</dialog>
-```
-- Each `<li>` is built with `textContent`:
-  `<div class="log-meta"><time datetime="…">12 Oct 2026</time> · <span class="log-type">Call</span> [<span class="tag-done">Follow-up done</span>]</div><p class="log-text"></p>[<div class="log-next">Next follow-up: 26 Oct 2026</div>]`.
-  `.log-text { white-space: pre-wrap; overflow-wrap: anywhere; }`.
-- After a save: the form resets (type kept, date back to today), the entry appears at the top, the badge and Last contacted update, and focus returns to the textarea. The drawer re-renders on `Store.onChange` while open.
-- CSS. Watch out: `display` on a `<dialog>` shows it even when closed, so style only `[open]`:
-  ```css
-  dialog.drawer { margin: 0 0 0 auto; width: min(440px, 100vw); height: 100dvh; max-height: 100dvh; border-radius: 0; }
-  dialog.drawer[open] { display: flex; flex-direction: column; }
-  .drawer-head { display: flex; justify-content: space-between; align-items: center; }
-  .drawer-body { flex: 1; overflow-y: auto; padding: 16px 20px 24px; display: grid; gap: 14px; align-content: start; }
-  .drawer form { padding: 0; }
-  textarea { width: 100%; min-width: 0; font: inherit; font-size: 1rem; padding: 10px 12px; border: 1.5px solid var(--line);
-             border-radius: 10px; color: var(--ink); background: #fff; resize: vertical; }
-  @media (max-width: 860px) { dialog.drawer { width: 100vw; } }
-  ```
-
-### 5.6 Edit dialog (P2-C): reuses `#dlg`
-
-- `#dlg[data-mode="add"|"edit"]`. Edit mode:
-  - title "Edit customer";
-  - the follow-up/status row `<div class="two" id="addOnly">` is hidden;
-  - submit button "Save changes";
-  - fields are prefilled with `.value`.
-- Saving calls `Store.saveCustomer(id, {name, contact, phone, city, last})`.
-- Errors show in `<p class="err" id="formErr" role="alert">` and the dialog stays open. **This replaces Phase 1's `alert()` in add mode too.**
-- The id never changes, so the follow-up, status and notes stay attached.
-- Use `form.elements.name`, not `form.name`.
-
-### 5.7 Dialog keyboard and focus (all dialogs)
-
-- `showModal()`. Esc closes.
-- Focus on open: Done -> type select; Notes -> textarea; Edit -> name.
-- On close, focus returns to the opener. Rows are rebuilt on render, so remember `{panel, id, cls}` and refocus `[data-id="<id>"] .<cls>` in that panel after render.
-- Ctrl/Cmd+Enter submits from a textarea. Errors use `role="alert"`. Counters turn `--warn` at 450 or more characters.
-
-### 5.8 Dashboard tab (P2-F), rendered by `dashboard.js` into `#panel-dash`
-
-**Data:** `Store.customers()`, `Store.allLog()`, `Store.lastContacted()`, `Store.fuKind()`, `Store.lastBucket()`, IST today. Nothing else. **Money is out of scope** for stage A: outstanding and overdue amounts from the Collections sheet would need the private database. That is a stage B+ idea and is never committed to git (CLAUDE.md rule 1).
-
-**Pure compute** (unit-tested):
-```js
-window.CrmDash = {
-  compute(customers, log, today, opts /* {from:"today"|"data", latestOrder, lastContacted(id)} */): {
-    total, status: {Active, "Follow up", "At risk"},
-    fu: {overdue, today, week, none, later},
-    disputed,
-    attention: [{id, name, contact, phone, followUp, kind:"overdue"|"today", days}], // overdue by followUp asc (oldest first), then name; then today by name
-    upcoming: [{date, label /* "Tomorrow · Tue 20 Oct" */, items:[{id, name}]}],    // today+1 .. today+7, empty days omitted
-    lastOrder: {"0-30", "31-60", "61-90", "91+", never, ref},                       // ref = today or latestOrder
-    byState: [{state /* "" = not known */, n}],                                     // n desc, then name; "" last
-    contact: {d7, d30, stale30},                                                    // counts of CUSTOMERS
-    recent: [{entryId, customerId, name, at, type, done:boolean, snippet /* first 80 chars */}] // newest 10
-  },
-  mount(panelEl, App, Store): void      // builds DOM with createElement/textContent; re-renders on App.onRender
-};
-```
-
-**Layout**, top to bottom. Every card is a `<section class="dcard" aria-labelledby>` with an `<h2>`.
-
-1. **Head row:** `<h2 class="sr">Dashboard</h2>`, plus "As of Monday, 19 October 2026 (India time)" and a `#printBtn` "Print / Save as PDF" (`no-print`).
-
-2. **KPI tiles** (`.tiles`, CSS grid `repeat(auto-fit, minmax(150px, 1fr))`; at 375px, 2 per row). Each tile is a `<button class="tile" data-k="…">` containing a big number, a label and a short sub-line. `aria-label` = "<label>: <n> customers. Show them."
-
-   | Tile | Number | Click -> `App.applyFilter(...)` | Style |
-   |---|---|---|---|
-   | Total customers | total | `{}` | navy |
-   | Active | status.Active | `{filter:"Active"}` | green text label "Active" |
-   | Follow up | status["Follow up"] | `{filter:"Follow up"}` | orange label |
-   | At risk | status["At risk"] | `{filter:"At risk"}` | red label |
-   | Overdue | fu.overdue | `{view:"overdue"}` | red border + sub "Needs a call now" (text, not just colour); grey "None overdue" when 0 |
-   | Due today | fu.today | `{view:"today"}` | orange border + "Due today" |
-   | Next 7 days | fu.week | `{view:"week"}` | navy |
-   | No follow-up set | fu.none | `{view:"none"}` | navy |
-   | Disputed | disputed | `{extra:{kind:"disputed"}}` | navy, with the existing red "Disputed" tag style |
-
-3. **Attention now** (left column on desktop, `grid-column: span 7`):
-   - Ordered list of `attention`, first 10. Each `<li>`:
-     - name (button -> `App.openNotes(id)`);
-     - `<span class="rel over">Overdue by N days</span>` (red + text) or `<span class="rel today">Due today</span>` (orange);
-     - contact, and phone as a `tel:` link;
-     - "Last contacted …";
-     - buttons `✓ Done` (-> `App.openDone(id)`) and `Notes 3` (-> `App.openNotes(id)`).
-   - Footer buttons: "Show all overdue (N)" -> `{view:"overdue"}` and "Show all due today (M)" -> `{view:"today"}`.
-   - Empty: "Nothing overdue or due today."
-
-4. **Next 7 days** (right column, `span 5`):
-   - Day groups from `upcoming`.
-   - Each group header is a button "Tomorrow · Tue 20 Oct (2)" -> `{extra:{kind:"due", value:date}}`.
-   - Names are buttons -> `App.openNotes(id)`.
-   - Footer: "Show all next 7 days (N)" -> `{view:"week"}`.
-   - Empty: "No follow-ups in the next 7 days."
-
-5. **Status mix:**
-   - One stacked CSS bar (`.stack`, height 18px, rounded) with 3 segments, `style.width = pct + "%"`, colours `--ok`, `--warn`, `--risk`. The segments are `aria-hidden`.
-   - Below it a legend of 3 buttons: "Active 20 (48%)" etc., each -> `{filter: …}`.
-   - The text carries the meaning (rule 7).
-
-6. **Last order recency:**
-   - A toggle `role="radiogroup"` "Count days from: [Today] [Latest order in the data (12 Jul 2026)]". The choice persists as `dashFrom`.
-   - 5 bar rows (`.hbar` buttons): "0–30 days", "31–60", "61–90", "91+ days", "No order on record". Each shows a navy fill bar scaled to the largest bucket, plus the count. Click -> `{extra:{kind:"last", value, ref}}`.
-   - Note under it, in `--ink-dim`: "Last order dates come from the Collections sheet, which stops at 12 Jul 2026, so counting from today puts most customers in 91+." The date comes from `Store.latestOrder()`, not hard-coded.
-
-7. **Customers by state:**
-   - Bar rows for `byState` (navy fill, count). "Not known" goes last, in grey italic.
-   - Click -> `{extra:{kind:"state", value}}`.
-   - Note: "State comes from the GST number."
-   - Rows show at most 8 plus a "Show all states" toggle (a local, not persisted UI state).
-
-8. **Activity (call log):**
-   - Three tiles (buttons): "Contacted in last 7 days: N" -> `{extra:{kind:"contact", value:"7d"}}`, "Last 30 days: N" -> `"30d"`, "Not contacted in 30+ days: N" -> `"stale30"`. All three count **customers**, so they match the filtered rows.
-   - Under them, "Recent activity": the newest 10 entries. Each shows date · type · customer (button -> `App.openNotes`) · "Follow-up done" tag · snippet (`textContent`, max 80 chars + "…").
-   - **Empty state (no log entries at all):** the card body is replaced by "No calls or notes logged yet. When you finish a follow-up, press ✓ Done on the customer; use Notes to record any call or visit." plus a button "Go to Attention now" (scrolls and focuses the Attention card). The three tiles still show (0, 0, total).
-
-9. **Quick export** (`no-print`): "Download Attention list (CSV)" uses `CrmExport.table` on the attention customers; if export.js is absent, the button is hidden. "Open the Export tab" -> `App.goTo("export")`.
-
-**Grid:** desktop `.dgrid { display: grid; grid-template-columns: repeat(12, minmax(0,1fr)); gap: 16px; }`. Cards 3–4 are `span 7` / `span 5`; 5–7 are `span 4` each; 8 is `span 12`. At ≤ 860px everything is `span 12`, one column. Cards are white, with the `--line` border and radius 14px (same as `.card`). Every `.hbar` is a button with `min-height: 40px`.
-
-**Bars:** `.hbar { display:grid; grid-template-columns: minmax(90px, 32%) 1fr auto; gap:10px; align-items:center }`, track `--line`, fill `--navy`, with `style.width` set via the CSSOM.
-
-**Refresh:** the dashboard re-renders on every Store change (via `App.onRender`) and on tab show. IST today is recomputed at each render.
-
-**Print** (`dashboard.css`, `@media print`):
-- `header, nav.tabs, .no-print, #panel-list, #panel-export, dialog, .banner { display: none !important; }` and `#panel-dash { display: block !important; }`.
-- Print shows the dashboard even when another tab is active. `#printBtn` calls `App.goTo("dash")` and then `window.print()`.
-- `#printHead` (hidden on screen) shows the logo at 48px plus "Varsha Forgings · CRM dashboard · 19 Oct 2026 (India time)".
-- Cards: `break-inside: avoid`. Tiles in 3 columns.
-- `* { print-color-adjust: exact; -webkit-print-color-adjust: exact; }` keeps the red and orange; the text still says Overdue / Due today.
-- Recent-activity note snippets are **hidden in print** (`.snippet { display:none }`), because notes are sensitive.
-- Buttons print as plain text (`border:0; background:none`).
-
-### 5.9 Export tab (P2-E), rendered by `export.js` into `#panel-export`
-
-1. **Scope**: `<fieldset><legend>Which customers</legend>`, with radios:
-   - `shown`: "Customers in the Customers tab now (N), with your current filters and search". This is the default.
-   - `all`: "All customers (M)".
-   It persists as `exportScope`. A live line under it shows `App.viewSummary()`.
-2. `<label><input type="checkbox" id="incNotes"> Include notes text (private: only tick this if the file stays with you)</label>`. It is unticked on every load and **never remembered** (deliberate privacy exception). It affects CSV and Copy only.
-3. Cards, each with a title, one line of text and a button:
-   - **Download CSV** `#csvBtn`: "Opens in Google Sheets (File > Import > Upload) or Excel."
-   - **Copy for Google Sheets** `#copyBtn`: "Copies the rows. Click cell A1 in your sheet and press Ctrl+V."
-   - **Download customers.json** `#export`: "All customers, no notes. Safe to commit to git as the backup."
-   - **Download backup (with notes)** `#backup`: "Everything, including private notes. Keep it safe; never commit it."
-   - **Send to Google Sheet automatically** `#autoBtn` `disabled`, plus a "Coming next" tag: "Will update a separate Google Sheet every day. It will not touch the Collections Engine sheet."
-4. `<p id="exportMsg" role="status">`: "Downloaded 12 customers." / "Copied 12 rows. Click cell A1 in your sheet and press Ctrl+V."
-5. Fallback (hidden): `<div id="copyFallback" hidden><p>Your browser blocked copying. Select all the text below and copy it (Ctrl+C, or long-press then Copy).</p><textarea id="copyBox" readonly rows="8"></textarea></div>`.
-
-Builders (also `module.exports` for Node):
-```js
-window.CrmExport = {
-  COLUMNS: ["Customer", "Contact person", "Phone", "City", "Last order", "Follow-up", "Status", "Last contacted", "Notes count"],
-  table(rows, store, opts /* {includeNotes} */): string[][],  // header first; adds "Notes" only if includeNotes
-  toCSV(table): string,      // "﻿" + RFC 4180: every field quoted, " doubled, "\r\n" rows + trailing "\r\n"
-  toTSV(table): string,      // \t \r \n inside values -> " "; rows joined by "\n"
-  safeCell(v): string,       // /^[=+\-@\t\r]/ -> prefix "'" (formula-injection guard)
-  fileName(scope, today): string   // "varsha-crm-customers-2026-10-19.csv" | "varsha-crm-customers-shown-2026-10-19.csv"
-};
-window.CrmExportUI = { mount(panelEl, App, Store) };
-```
-- Cell values:
-  - name, contact, phone (stored text), city (or state if no city);
-  - dates as `YYYY-MM-DD` or empty;
-  - status, last contacted, and notes count as a number.
-- The notes column holds all entries, newest first, joined by `" | "`, each as `"2026-10-12 Call: text"`, with `" (follow-up done)"` on Done entries.
-- **Never included:** emails, GST, `contactFrom`, `disputed`, `id`, timestamps.
-- `shown` uses `App.visibleCustomers()`, so the export follows the current filters including `extra`.
-- Copy:
-  ```js
-  try { await navigator.clipboard.writeText(tsv) }
-  catch { show #copyFallback; copyBox.value = tsv; copyBox.focus(); copyBox.select();
-          try { document.execCommand("copy") } catch {} }
-  ```
-- Download uses `App.download(name, csv, "text/csv;charset=utf-8")`.
-- At 375px, cards stack and buttons are full width.
-
-**"Send to Google Sheet automatically", compared (design only, stage B+):**
-
-| Option | How | Cost | Secrets | Verdict |
-|---|---|---|---|---|
-| (a) Google Apps Script web app | The user creates a **new** sheet "Varsha CRM export", pastes a ~40-line `doPost` script that checks a token and overwrites a `Customers` tab, and deploys it as a web app. A Supabase Edge Function (daily via pg_cron, plus an on-demand "Send now" that checks the JWT and `am_i_allowed`) POSTs the rows. | $0 | URL + token as **Supabase secrets** | **Recommended**: free, no Google Cloud project, easy to revoke |
-| (b) Zapier webhook | POST to a Catch Hook -> Sheets row | Webhooks need a paid plan | Hook URL acts as a password | No: cost, third party, row-by-row appends |
-| (c) Supabase function + Google service account | Cloud project, service account key as a secret, Sheets API | $0 | Long-lived private key | Workable but heavy for 42 rows |
-
-Rules for whichever option is built:
-- A new spreadsheet only. The script hard-codes its own spreadsheet id and must **never** touch "VFPL Collections Engine".
-- No notes unless the user turns them on.
-- No secret ever sits in the browser. It needs stage B, because the browser alone cannot hold a secret.
-
-### 5.10 375px
-- Customers rows stay as cards, with `.lc` under the name and the action buttons wrapped.
-- Dialogs use `min(480px, 100vw - 32px)`; the drawer is full screen.
-- Dashboard: one column, tiles 2 per row, bar labels wrap.
-- Export: cards stack.
-- No sideways scroll anywhere. Tests check all three tabs plus the open drawer and dialog.
-
-### 5.11 Copy
-`#rule`: "Pick a status and a follow-up date on each row. A follow-up date in the past turns red. Press Done when you have followed up, and Notes to see the call log. Last order is the customer's latest invoice date in the Collections sheet (it runs to 12 Jul 2026). Grey italic contact names are guessed from email addresses, and grey states come from GST numbers."
-
----
-
-## 6. Test plan
-
-### 6.1 Structure (A1 sets this up; one command still runs everything)
-
-`NODE_PATH=$(npm root -g) node tests/smoke.js`
-
-The runner (A1 owns it):
-- starts the static server. Its `types` map gains `.js: text/javascript`, `.css: text/css`, `.jpg: image/jpeg`, `.png: image/png`.
-- launches Chromium;
-- runs every `tests/unit/*.js`, then every `tests/checks/*.js`, in filename order;
-- prints PASS/FAIL and exits 1 on any failure.
-
-Each module is `module.exports = async (t) => { ... }` with:
-```js
-t = { browser, url, root, data /* parsed customers.json */, check(name, ok, extra),
-      fresh(opts?) /* -> {ctx, page} new context, clean storage, 1280x900, errors collected */,
-      open(page) /* goto + wait for app ready: document.body.dataset.ready === "1" */,
-      tab(page, "dash"|"list"|"export"), reload(page), row(page, name), rows(page) /* visible #rows tr count */,
-      istToday(offset), fs, path,
-      requires(page, elementId) /* -> true if #elementId exists; else prints "SKIP <name> (needs ...)" and returns false */ }
-```
-- Every module uses its own `t.fresh()` context, so modules are independent and agents can add them in parallel.
-- `app.js` sets `document.body.dataset.ready = "1"` after the first render (replacing "wait for `#rows tr`", which would time out while the Customers panel is hidden).
-- The final module `tests/checks/99-final.js` (A1) checks "no console errors" across all pages.
-
-| File | Owner |
-|---|---|
-| `tests/smoke.js` (runner), `tests/checks/10-core.js`, `tests/checks/99-final.js` | A1 |
-| `tests/checks/20-features.js` | A2 |
-| `tests/checks/30-export.js`, `tests/unit/export-unit.js` | A3 |
-| `tests/checks/40-dashboard.js`, `tests/unit/dashboard-unit.js` | A4 |
-
-### 6.2 Checks (exact names)
-
-**10-core (A1)**: all 27 Phase 1 checks, adapted. They open the Customers tab first. The duplicate-name check reads `#formErr`. The export check clicks `#tab-export` then `#export` and expects keys `city,contact,contactFrom,disputed,followUp,id,last,name,phone,state,status`. The "nothing unsaved on a clean load" check becomes `no notice on a clean load`. Then:
-- `first visit opens the Dashboard tab` and `tab order is Dashboard, Customers, Export`
-- `tab choice survives a refresh` (choose Export, reload, Export selected and its panel visible)
-- `arrow keys move between tabs`
-- `rows carry a stable data-id` (ZF row `data-id="zf-steering-gear-india-ltd"`)
-- `Phase 1 edits move to the new store`: fresh context, init script sets `varsha-crm-local-v2` to `{status:{"NR INDUSTRIES":"At risk"}, follow:{"NEEL METAL PRODUCTS LIMITED": istToday(2)}, added:[{name:"Legacy Forge", phone:"9000000000", status:"Active", followUp:""}]}`. Result: NR is At risk, NEEL follow-up is +2, 43 rows, `#notice` contains "Moved 3 changes".
-- `moved edits survive a refresh and the notice does not repeat` (legacy key gone, `-backup` key present)
-- `extra filter chip shows, clears with ×, and survives a refresh` (set via `page.evaluate(() => App.applyFilter({extra:{kind:"disputed"}}))`)
-- `logo shows in the header` (`.logo-badge img` naturalWidth > 0) and `favicon is a 64px PNG` (fetch `assets/favicon-64.png`: 200, `image/png`, PNG header width 64)
-- `customers.json export never includes notes` (after adding a note through `Store.addLog` in `page.evaluate`, no `note` or `callLog` keys and the text is absent)
-- `backup file includes notes and is named varsha-crm-backup-<IST date>.json`
-
-**20-features (A2)**:
-- P2-A:
-  - `Done button only on rows with a follow-up`
-  - `Done with a note and next date moves the follow-up` (ZF at istToday(-3); note "Spoke to Swapnil"; "In 1 week": input = istToday(7), `.rel` "In 7 days", row not `overdue`)
-  - `Done adds a log entry and sets Last contacted today` (badge "1", `.lc` "Last contacted today")
-  - `Done survives a refresh` (and the drawer shows "Follow-up done" + the note)
-  - `Done without a next date clears the follow-up` ("No follow-up set" count +1; kept after reload)
-  - `Done refuses a past next date`
-  - `Esc closes Done without saving`
-- P2-B:
-  - `Notes drawer adds an entry at the top`
-  - `note is limited to 500 characters` (600 typed, 500 kept, `#noteCount` "500/500")
-  - `older-dated note sorts below newer ones`
-  - `notes and badge survive a refresh`
-  - `Last contacted is the newest date`
-  - `note text is shown as text, not HTML` (`<b>x</b>` is literal; no `li b`)
-  - `empty note is refused`
-- P2-C:
-  - `edit changes name, contact, phone and city` (ZF -> "ZF STEERING GEAR INDIA LTD PUNE", "Anil Kulkarni", "9123456789", "Pune")
-  - `rename keeps the same id`
-  - `renamed customer keeps follow-up, status and notes`
-  - `edits survive a refresh`
-  - `edited contact is no longer shown as a guess`
-  - `rename to an existing name is refused` (`#formErr`)
-  - `empty name is refused`
-- Layout:
-  - `no sideways scroll at 375px with the Notes drawer open`
-  - `... with the Done dialog open`
-  - `Done, Notes and Edit buttons are visible in the phone card`
-  - `focus returns to the Notes button after closing the drawer`
-
-**30-export (A3)** + `tests/unit/export-unit.js` (quoting of `"`, `,`, newline, `–`, Devanagari; `safeCell`; TSV flattening; BOM):
-- `Export tab shows scope, notes box and five options`
-- `CSV starts with a BOM and has the exact header`: `﻿"Customer","Contact person","Phone","City","Last order","Follow-up","Status","Last contacted","Notes count"`
-- `CSV respects the current filter` (Overdue filter on: data rows = the Overdue chip count; filename contains `shown`)
-- `CSV "All customers" has every row`
-- `CSV has no notes unless the box is ticked`, then ticked: last header `"Notes"` and the note text present
-- `notes box is unticked after a refresh` and `export scope survives a refresh`
-- `CSV guards formulas` (contact "=1+1" becomes `"'=1+1"`)
-- `CSV has no emails or GST` (no `\S+@\S+\.\S+`, no `\d{2}[A-Z]{5}\d{4}[A-Z]\d[A-Z][A-Z0-9]`)
-- `Copy puts tab-separated rows on the clipboard` (context `permissions: ['clipboard-read','clipboard-write']`; text starts `Customer\tContact person`; lines = rows + 1)
-- `Copy falls back when the clipboard is blocked` (init script makes `writeText` reject; `#copyFallback` visible; `#copyBox` starts `Customer\t`)
-- `automatic Sheet export is marked coming next and disabled`
-- `no sideways scroll on the Export tab at 375px`
-
-**40-dashboard (A4)** + `tests/unit/dashboard-unit.js` (`compute()` on a hand-made 6-customer set: buckets, ordering, state sort, contact counts, empty log). Expected numbers are **computed from `t.data` in the test**, never typed in by hand:
-- `KPI tiles match the data` (total 42; Active/Follow up/At risk/Disputed counts from `customers.json`)
-- `every KPI number opens the matching Customers filter` (loop over all 9 tiles: click, then the visible row count equals the tile number; go back to Dashboard)
-- `Overdue tile shows red text and "Needs a call now"` (set ZF -3: tile 1, sub-text present, colour `rgb(180, 35, 24)`)
-- `Attention lists overdue oldest first, then due today` (ZF -3, NR -5, NEEL 0: order NR, ZF, NEEL; texts "Overdue by 5 days", "Overdue by 3 days", "Due today")
-- `Done from Attention opens the Done dialog for that customer` (title contains ZF), then `saving removes it from Attention and lowers Overdue`
-- `Notes from Attention opens the Notes drawer`
-- `Next 7 days groups by date and the day count filters` (follow-up +2 on one customer: the group button "(1)" gives 1 row)
-- `status legend numbers open the status filter`
-- `last-order buckets add up to the total` and `"No order on record" matches customers without a last order`
-- `"Count days from" choice changes the buckets and survives a refresh`
-- `state bar opens the state filter` (Maharashtra count = rows)
-- `activity shows the empty state with no call log`, then after one note: `recent activity lists the note and hides the empty state`
-- `contact tiles open the matching filter` ("Contacted in last 7 days" = 1, then 1 row)
-- `dashboard survives a refresh` (tab still Dashboard, numbers unchanged)
-- `no sideways scroll on the Dashboard at 375px`
-- `print view shows the dashboard with the logo and hides tabs and notes` (`page.emulateMedia({media:'print'})`: `#printHead img` naturalWidth > 0, `nav.tabs` hidden, `.snippet` hidden)
-- `every dashboard number is a button` (all `.tile`, `.hbar` and legend items are `BUTTON` elements)
-
-**99-final (A1)**:
-- `no innerHTML in index.html, app.js, store.js, export.js, dashboard.js`
-- `blocked storage shows a warning` (Phase 1 check, kept)
-- `no console errors` (all pages, all modules)
-- Stage B adds `config.js holds no secret key` and the auth, queue and offline checks.
-
-### 6.3 Stage A review checklist (lead, then the user)
-Use GitHub Pages (or `npx serve .`) on desktop and on a phone:
-1. The tabs work and the tab is remembered after a refresh.
-2. Every dashboard number opens the right list.
-3. Mark done, notes, edit and rename all work, and survive a refresh.
-4. The CSV opens in Google Sheets with `–` and Devanagari intact. Copy and paste into Sheets lines up.
-5. Print preview of the Dashboard looks right, with no note text.
-6. The logo is readable on its white badge, and the favicon shows.
-7. `git status` shows no backup or CSV files.
-
-### 6.4 Stage B live checklist (B3 deploy agent)
-1. `curl -s "$URL/rest/v1/customers?select=id&limit=1" -H "apikey: $KEY"` returns 401/42501 and never rows. Same for `call_log`, `allowed_users`, `v_followups_due` and `POST rpc/mark_done`.
+### 8.5 Live checklist (B3)
+1. `curl -s "$URL/rest/v1/customers?select=id&limit=1" -H "apikey: $KEY"` returns 401/42501, never rows. Repeat for every table, the view and the RPCs.
 2. `curl -s -X POST "$URL/auth/v1/signup" -H "apikey: $KEY" -H "content-type: application/json" -d '{"email":"probe@example.com","password":"Probe-12345678"}'` returns 422 `signup_disabled`.
-3. `supabase/verify_rls.sql` prints `ALL RLS CHECKS PASSED`. Advisors show no WARN or ERROR.
-4. Sign in as `<ALLOWED_EMAIL>`. Repeat §6.3 items 2–4 on two devices: an edit on one shows on the other after a refresh.
-5. Go offline, change a status: the banner shows. Go online and press Retry: it is saved.
-6. Sign out: the cache key is gone. `git grep -nE "sb_secret_|service_role"` finds only the guard and the docs.
-7. `select * from public.v_followups_due;` matches the Overdue + Due today tiles.
-8. Delete probe rows: `delete from public.customers where id like 'zz-%';`.
+3. `verify_rls.sql` passes; Advisors show no WARN or ERROR (one INFO on `allowed_users` is expected).
+4. Two devices see the same edits. The offline queue works. Sign-out clears the cache.
+5. `git grep -nE "sb_secret_|service_role"` finds only the guard and the docs.
+6. `v_followups_due` matches the dashboard's Overdue + Due today.
+
+### 8.6 Later, design only
+- **Automatic Google Sheet export.** Recommended: (a) a Google Apps Script web app in a **new** sheet "Varsha CRM export", POSTed by a Supabase scheduled Edge Function, with the token stored as a Supabase secret. Rejected: (b) Zapier (webhooks are paid, and a third party sees the data) and (c) a service account (a heavy key to manage). It never touches "VFPL Collections Engine". No notes or amounts unless the user turns them on.
+- **Money straight from the sheet:** a read-only server job (Apps Script or service account) pulls AGING and LIVE_POSITION into `money_*` tables daily. It never writes to the sheet.
+- **Payment trend** charts from the kept `money_imports` history.
+- **Telegram 11:00 IST:** pg_cron `30 5 * * *` UTC calls an Edge Function that reads `v_followups_due` (+ late orders + overdue quotes) and sends names, days and contact person, without phones.
 
 ---
 
-## 7. Build breakdown (Sonnet agents)
-
-File ownership is exclusive while a task runs. Each task works on its own branch `phase2/<task>` and reports with commit and file links plus the live-view link (CLAUDE.md "Links at every step"). The lead merges.
-
-### Stage A (now)
-
-| Task | Owns | Starts after | Parallel with |
-|---|---|---|---|
-| **A1 Foundation** | `index.html`, `app.js` (new), `store.js` (new), `assets/varsha-logo.jpg`, `assets/favicon-64.png`, `.gitignore`, `tests/smoke.js`, `tests/checks/10-core.js`, `tests/checks/99-final.js`, **stub** files `export.js`, `export.css`, `dashboard.js`, `dashboard.css` (one-line comments) | design approved | none |
-| **A2 Features P2-A/B/C** | `app.js`, `index.html`, `tests/checks/20-features.js` | A1 merged | A3, A4 |
-| **A3 Export P2-E** | `export.js`, `export.css`, `tests/checks/30-export.js`, `tests/unit/export-unit.js` | A1 merged | A2, A4 |
-| **A4 Dashboard P2-F** | `dashboard.js`, `dashboard.css`, `tests/checks/40-dashboard.js`, `tests/unit/dashboard-unit.js` | A1 merged | A2, A3 |
-| **A5 Docs + review deploy** (lead or Sonnet) | `README.md`, the GitHub Pages check | A2, A3, A4 merged | none |
-
-Order: **A1 -> (A2 ∥ A3 ∥ A4) -> merge A2 first, then A3 and A4 rebase (no shared files) -> full suite -> A5 -> the user reviews -> GO for stage B.**
-A4's Done/Notes-from-Attention checks call `App.openDone/openNotes`. On A4's branch these are A1's stubs, so A4 marks those 3 checks with `t.requires("doneDlg")`: the check is skipped with a "SKIP (needs A2)" line when `#doneDlg` is missing. They must PASS after the merge.
-
-**A1 Foundation**
-- **Inputs:** this doc §1.1, §2.1–2.4, §3.1, §4.1–4.4, §5.1–5.3 (structure only), §5.11, §6.1–6.2 (10-core, 99-final); the logo path from the lead.
-- **Do:**
-  1. Move the inline script into `app.js` unchanged and run the old tests (27 pass).
-  2. Add the CSP meta, `defer` scripts, tabs, logo badge, favicon (the §5.1 script) and `.gitignore`.
-  3. Write `store.js` with LocalBackend, migration, validation, helpers, `exportCustomersJson` and `exportBackup`.
-  4. Rewire `app.js` to `Store` (remove `local`, `build`, `baseStatus`, `baseFollow`, everything keyed by name); `data-id`; `visibleCustomers()`; the extra filter; the `window.App` contract with stubs; placeholder export panel; `body.dataset.ready`.
-  5. Turn smoke.js into the runner.
-- **Acceptance:** all 10-core and 99-final checks pass; no `innerHTML`; no CSP violations; every Phase 1 behaviour unchanged; the favicon shows the circle.
-- **Report:** test output, the `Store` and `App` APIs as built (list any difference from §4.2–4.3), a favicon screenshot path, branch and commit links, live link.
-
-**A2 Features**
-- **Inputs:** §5.3–5.7, §6.2 (20-features).
-- **Do:** row actions, Last contacted, Done dialog, Notes drawer, Edit mode with `#formErr`, `#live`, focus return; implement `App.openDone`, `openNotes` and `openEdit`. Use only `Store` methods; if something is missing, report it, do not edit `store.js`.
-- **Acceptance:** 20-features plus all earlier checks pass.
-- **Report:** test output, 1280px and 375px screenshots (stored outside the repo), links.
-
-**A3 Export**
-- **Inputs:** §5.9, §6.2 (30-export).
-- **Do:** `CrmExport` + `CrmExportUI.mount` (replaces the placeholder panel content, keeps the ids `export` and `backup`), `export.css`, tests.
-- **Acceptance:** export-unit + 30-export + all earlier checks pass.
-- **Report:** test output, a sample CSV header line, links.
-
-**A4 Dashboard**
-- **Inputs:** §5.8, §4.3–4.4, §6.2 (40-dashboard).
-- **Do:** `CrmDash.compute` + `mount`, `dashboard.css` including print, tests.
-- **Acceptance:** dashboard-unit + 40-dashboard pass (3 SKIPs allowed only before the A2 merge); the 375px and print checks pass.
-- **Report:** test output, desktop, phone and print-preview screenshots, links.
-
-**A5**
-- Update the README: tabs, Mark done, notes, edit, export, the backup warning, "notes never in git", the logo, the test layout.
-- Run the §6.3 checklist on GitHub Pages and send the user the review links.
-
-### Stage B (only after the user's GO on stage A)
-
-| Task | Owns | Starts after | Parallel with |
-|---|---|---|---|
-| **B1 Backend** | `supabase/migrations/20261019000100_phase2.sql`, `supabase/verify_rls.sql`, `scripts/make-seed.js` | GO; the deploy half waits for the lead's §3.3 setup | B2 |
-| **B2 Data layer + login** | `store.js` (SupabaseBackend, queue, cache, auth), `config.js` (blank), `app.js` + `index.html` (auth screens, `#who`, pending banner, CSP widening), `tests/checks/50-auth-queue.js` | GO | B1 |
-| **B3 Deploy + live check** | `config.js` (URL + key only) | B1 deployed + B2 merged | none |
-
-- **B1:**
-  - Write the §2.5 SQL exactly.
-  - Write `verify_rls.sql`. It runs `DO` blocks under `set local role anon` / `authenticated` with `set_config('request.jwt.claims', ...)`. A stranger must see 0 rows and be refused on insert, `allowed_users` and `mark_done`. The allowed user (claims from `auth.users where email = '<ALLOWED_EMAIL>'`) can read ≥42, insert, update, log, `mark_done` and delete a `zz-rls-probe` row, but cannot delete a seed row, change an id, or update a log entry. Everything is rolled back, and the script ends with `select 'ALL RLS CHECKS PASSED'`.
-  - Write `make-seed.js`.
-  - Apply in the SQL Editor (or with the Supabase MCP only if the lead grants it), seed from the user's latest export, verify, and run curl checks 1–2.
-  - **Report:** project URL, which key type (public), all outputs. Never the service_role key or the DB password.
-- **B2:**
-  - Implement §4.5 and §3.4.
-  - Fake-auth and offline tests: login screen, wrong password, session survives refresh, denied user, sign-out clears the cache, offline change queued and kept after refresh and sent on Retry, config guard.
-  - Pin supabase-js and compute the SRI.
-  - **Acceptance:** all stage A checks plus the new ones pass with no network.
-- **B3:**
-  - Fill `config.js`, run §6.4, report.
-  - If the publishable key fails, use the legacy anon key.
-
-### CLAUDE.md updates the lead should make (this agent did not edit it)
-- Rule 1 (stage A wording): "Customers are seeded from `customers.json`. Edits and the call log live in this browser (localdb) until stage B moves them to Supabase. Notes are never committed. Backup and CSV files are gitignored."
-- Rule 2: "... included in the export: customer fields in customers.json, notes in the backup file. The 'Include notes' box is deliberately not remembered."
-- Rule 3: "`tests/smoke.js` runs `tests/unit/*` and `tests/checks/*`. Each task adds its own module."
-- New gotchas:
-  - "`display` on a `<dialog>` shows it even when closed; style `dialog[open]` only."
-  - "Wait for `body[data-ready]`, not `#rows tr`, because the Customers panel may be hidden."
-  - "Serve `.js` as `text/javascript` in the test server."
-  - Stage B: "PostgREST returns at most 1000 rows per request; page with `range()`."
-  - Stage B: "Free Supabase projects pause after 7 idle days."
-  - "Only the publishable or anon key in `config.js`."
-
----
-
-## 8. Risks and Plan B
+## 9. Risks and Plan B
 
 | # | Risk | Plan B |
 |---|---|---|
-| 1 | Stage A data lives in one browser; the user reviews on a phone and a PC and sees different data. | Expected and stated on the page ("saved in this browser"). Export customers.json / backup to move data. Stage B fixes it. |
-| 2 | Parallel agents A2/A3/A4 break each other. | Disjoint files; the `App` contract is frozen by A1; merge A2 first and rerun the full suite after each merge. |
-| 3 | The `App`/`Store` contract misses something a panel needs. | The agent reports it, the lead adds it in a small A1 follow-up commit, and the others rebase. Agents never edit files they do not own. |
-| 4 | Dashboard numbers drift from the Customers filters. | Tiles and filters share `Store.fuKind/lastBucket` and `App.applyFilter`; the "every KPI number opens the matching filter" check compares counts. |
-| 5 | The last-order buckets look wrong, because the data stops at 12 Jul 2026. | The "Count days from: latest order in data" toggle and the explicit note. |
-| 6 | Print layouts differ by browser. | Test in Chromium (print media emulation); manual check in A5; keep print CSS simple (block layout, avoid page breaks inside cards). |
-| 7 | The clipboard API is blocked (http, iframe, Firefox permissions). | Selectable textarea fallback + `execCommand("copy")`. |
-| 8 | The CSP blocks something not covered by tests. | A5 checks the console on Pages; widen only the exact directive; never `'unsafe-inline'` for scripts. |
-| 9 | The favicon crop includes the wordmark or is off-centre. | The script cuts at 75% height and auto-detects the circle; A1 checks visually; fallback: hand-crop box (43, 23, 166, 146). |
-| 10 | GitHub Pages caches an old `app.js`. | `?v=` on every asset, bumped each release. |
-| 11 | localStorage fills up with notes (about 5 MB). | `#storageWarn` + export; stage B moves notes to the DB. |
-| B1 | Free Supabase pauses after 7 idle days. | The cache keeps the page readable and writes are queued; the lead presses Restore; daily use and the future Telegram job keep it awake. |
-| B2 | RLS mistake. | `verify_rls.sql` + curl + Advisors before go-live; emergency `revoke ... from authenticated`. |
-| B3 | CDN, SRI or publishable-key problems with supabase-js. | Vendor the file; use the legacy anon key. |
-| B4 | Password reset email not delivered (built-in SMTP). | The lead resets it in the dashboard; free SMTP later. |
-| B5 | No backups on the free plan. | Weekly "Download backup (with notes)", off git. |
+| 1 | The real AGING/LIVE_POSITION headers differ from the placeholders. | Header matching shows the exact missing and found columns; A5 adds the lead's headers as the first synonyms; the spec is one constant. |
+| 2 | Wrong money totals (bad parsing, total rows counted twice). | Strict parsing blocks the import on any bad cell; "Total" rows are skipped and listed; the review step compares with the sheet's own totals to the rupee. |
+| 3 | Name matching misses or mis-matches customers. | Exact, then `nameKey`, then remembered manual matches; unmatched names are listed every time; totals include them, so nothing silently disappears. |
+| 4 | Amounts leak into git or prints. | Kept in their own key, excluded from `customers.json` and the backup, `*.csv` gitignored, the Hide amounts toggle also covers print, tests use fake amounts; `git status` is part of the review checklist. |
+| 5 | Stage A data is per-browser, so phone and PC differ. | Stated on the page; backup to move data; stage B fixes it. |
+| 6 | Six parallel agents collide. | Whole-file ownership, frozen §4 contracts, stubs from A1, a fixed merge order with a full suite after each merge, `--strict` at the end. |
+| 7 | A contract gap is found mid-build. | Report it to the lead; A1 makes a small follow-up commit; others rebase. Nobody edits files they do not own. |
+| 8 | RFQ, order and visit fields are assumptions. | All in one spec/constant per module; the review confirms them; changes are local to that module. |
+| 9 | The desktop RFQ board is cramped (7 columns). | Compact cards; 4-column wrap from 860–1100px; Table view as the alternative. |
+| 10 | localStorage limit (about 5 MB). | Imports replace old data; `#storageWarn` on a failed write; stage B moves data to the DB. |
+| 11 | The clipboard is blocked. | Textarea fallback. |
+| 12 | The CSP blocks something on Pages. | Check the console at review; widen only that directive; never `'unsafe-inline'` scripts. |
+| 13 | GitHub Pages caches old files. | `?v=` on every asset, bumped per release. |
+| B | Supabase pauses after 7 idle days; RLS mistakes; CDN or key problems; reset email limits; no free backups. | Restore button + cache; `verify_rls.sql` + curl + Advisors + emergency revoke; vendored library or legacy anon key; the lead resets passwords; weekly backup download. |
 
-## 9. Open questions for the user (each with a recommended answer)
+---
 
-1. **Phone numbers and contact names in the public repo.** `customers.json` is public on GitHub Pages and in git history. Keep them?
-   *Recommended:* keep them for the stage A review (nothing new is exposed). In stage B, once they are seeded into the private DB, blank `phone` and `contact` in the committed file. Do not rewrite history.
-2. **Should a "Note" entry count as "Last contacted" (and in the Dashboard contact tiles)?**
-   *Recommended:* no; count only Call, Visit, Email and Telegram. It is a one-line `CONTACT_TYPES` change. Builders use all five until you answer.
-3. **Can log entries be edited or deleted on the page?**
-   *Recommended:* no (append-only); add a correcting note instead.
-4. **Default tab on open: Dashboard (as requested), or the last tab used?**
-   *Recommended:* the last tab used (it persists), with Dashboard on the very first visit. This is what the design does.
-5. **Stage B automatic Google Sheet + Telegram contents.** Apps Script into a new sheet; should phone numbers go to Telegram or the sheet?
-   *Recommended:* Apps Script web app called by a Supabase scheduled function into a **new** "Varsha CRM export" sheet. The Telegram reminder lists name, days overdue and contact person, with no phones. Forgot-password stays hidden (`allowPasswordReset:false`) until a free SMTP is set up.
+## 10. Assumptions to confirm at the HTML review, and open questions
+
+**Assumptions built into stage A** (the user confirms or corrects them while clicking through; each is a one-place change):
+- A1. **Released parts** = RFQs at Finalised, PO, Sample or PPAP (the note is on the dashboard).
+- A2. RFQ fields as in §2.5; order fields as in §2.6; their CSV headers are placeholders.
+- A3. Money: outstanding from LIVE_POSITION; overdue and the 4 aging buckets from AGING; "Cr" means credit (negative); dates in imports are day-first.
+- A4. Week starts on Monday in the calendar; "Meeting" logs as "Visit" in the call log.
+- A5. Every log type (including "Note") counts as "Last contacted" (`CONTACT_TYPES`).
+- A6. Log entries and RFQ history are append-only (fix a mistake with a new entry).
+
+**Open questions (the user decides; recommended answers given)**
+1. **Money source split.** Is LIVE_POSITION the right source for "outstanding" and AGING for "overdue + aging buckets"?
+   *Recommended:* yes. Also, please send the exact column headers of both tabs (without amounts) so the import matches them exactly.
+2. **Lost or dropped RFQs.** The 7 stages have no "lost" end. Add a "Lost" marker outside the stages?
+   *Recommended:* yes, as a flag with a reason (built that way), so conversion rates are honest.
+3. **Visits and calls marked done.** Should they also create a call-log entry automatically?
+   *Recommended:* yes, ticked by default with an untick option, so "Last contacted" stays right.
+4. **Public phone numbers.** `customers.json` (names, 10 contact names, 42 phones) is public today. Keep it?
+   *Recommended:* keep it for the stage A review. In stage B, once the data is in the private database, blank `phone` and `contact` in the committed file; do not rewrite git history.
+5. **RFQ and order sources.** Please share the RFQ sheet link and say where the order/dispatch schedule lives.
+   *Recommended:* build now with the assumed fields (done this way) and fix the column mapping in a 1-hour follow-up once the sheets are seen; stage B can later read them directly (read-only).
