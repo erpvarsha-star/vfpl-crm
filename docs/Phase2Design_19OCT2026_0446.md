@@ -1,11 +1,13 @@
 # Varsha CRM - Phase 2 design
 
-Date: 19 Oct 2026, 04:46 IST (revised the same day for scope updates 1 and 2). Author: Opus design agent. Status: ready for the lead's review.
+Date: 19 Oct 2026, 04:46 IST (revised the same day for scope updates 1, 2 and 3). Author: Opus design agent. Status: ready for the lead's review.
+First HTML review scope = the user's **"Owner's Path"**: everything in this doc marked stage A, about 48 hours of parallel Sonnet build. Items for after the first review are in §11 "Later".
 
 **Two stages**
 - **Stage A, build now: a working HTML prototype.** Browser storage only, hosted on GitHub Pages, for the user to review. **No Supabase calls, no login, no keys, no real amounts in git.**
   - Tabs: **Dashboard · Customers · RFQs · Schedule · Export**. The tab persists across refresh.
   - Features: Mark done (P2-A), Notes and call log (P2-B), Edit customer (P2-C), Export (P2-E), Dashboard (P2-F), Money import (P2-G), RFQ pipeline (P2-H), Schedule: orders and visits (P2-I), Released parts (P2-J), and the logo.
+  - Also: **Plants, group and segment** on each customer (P2-K), **Revenue analytics** from an INVOICE_REGISTER import with targets (P2-L), and a printable **Weekly sales review** (P2-M).
 - **Stage B, only after the user's GO on stage A:** Supabase (Postgres, Auth, RLS, allowlist) behind the same `Store` API. The Telegram 11:00 IST reminder is designed as a hook only.
 
 Terms
@@ -28,7 +30,10 @@ Terms
 5. **Amounts never reach git.** They are kept in localStorage, excluded from `customers.json` and from the backup, shown with a "Data as of" label, and can be hidden on screen and in print with one toggle. `*.csv` is gitignored. Tests only use made-up amounts built inside the test.
 6. **The Dashboard is read-only and every number is a button** that opens the matching tab with the matching filter; the row count equals the number. Charts are CSS bars only. The dashboard reads each module's `stats()` contract, so it is built in parallel with the modules.
 7. **RFQ pipeline**, 7 stages in this order: Received, Quoted, Negotiated, Finalised, PO, Sample, PPAP. Every stage change is logged with a date. "Released parts" = RFQs at Finalised or later (assumption, to confirm at review).
-8. **Red rule everywhere:** overdue follow-ups, overdue amounts, late orders, overdue quotes, missed visits and overdue next actions are red **and** say so in words. Due today is orange and says so.
+8. **Red rule everywhere:** overdue follow-ups, overdue amounts, late orders, overdue quotes, missed visits, overdue next actions, "Behind pace" targets and concentration risk are red **and** say so in words. Due today is orange and says so.
+9. **Customers gain optional `group`, `segment`, `vehicleSegment` and `plants[]`.** All are blank by default and never invented. `customers.json` stays backwards compatible. City and state shown in the table come from the first plant when plants exist, otherwise from the old fields.
+10. **Revenue = the Taxable column** (before GST and TCS), never Invoice Amount. It is imported from INVOICE_REGISTER CSV in the browser and kept in localStorage only, with "Data through <last invoice date>". GSTIN and the tax columns are dropped at import and never stored. Targets are typed by the user, kept in localStorage, and included in the private backup.
+11. **The Weekly sales review is one A4 page** built from the same module `stats()` contracts. It opens from the Dashboard and the Export tab. Note text appears only when "Include notes" is ticked, and that box is never remembered.
 
 ---
 
@@ -53,6 +58,8 @@ Terms
  │ js/money.js         Money import (AGING, LIVE_POSITION), per-customer amounts│
  │ js/rfqs.js          RFQs tab: board + table, RFQ dialog, RFQ import          │
  │ js/schedule.js      Schedule tab: Visits & calls calendar, Orders & dispatch │
+ │ js/revenue.js       INVOICE_REGISTER import, revenue stats, targets dialog   │
+ │ js/report.js        Weekly sales review (one A4 page, print)                 │
  │ js/dashboard.js     Dashboard tab (reads every module's stats())             │
  │ js/export.js        Export tab                                               │
  │ css/<module>.css    one stylesheet per module above                          │
@@ -61,6 +68,7 @@ Terms
  └──────────────────────────────────────────────────────────────────────────────┘
  localStorage: varsha-crm-localdb-v1 (customers, call log, rfqs, rfq_history, visits, orders)
                varsha-crm-money-v1 (amounts)   varsha-crm-aliases-v1 (name -> customer id)
+               varsha-crm-revenue-v1 (invoices: no GSTIN, no tax columns)   varsha-crm-targets-v1 (targets + settings)
                varsha-crm-view-v1 (tab + each panel's filters/sort/sub-view)
 ```
 
@@ -68,7 +76,7 @@ Terms
 
 ```html
 <link rel="icon" type="image/png" sizes="64x64" href="assets/favicon-64.png">
-<link rel="stylesheet" href="css/base.css?v=2">      <!-- then customers, money, rfqs, schedule, dashboard, export .css -->
+<link rel="stylesheet" href="css/base.css?v=2">      <!-- then customers, money, rfqs, schedule, revenue, report, dashboard, export .css -->
 ...
 <script src="js/store.js?v=2" defer></script>
 <script src="js/csv.js?v=2" defer></script>
@@ -79,6 +87,8 @@ Terms
 <script src="js/money.js?v=2" defer></script>
 <script src="js/rfqs.js?v=2" defer></script>
 <script src="js/schedule.js?v=2" defer></script>
+<script src="js/revenue.js?v=2" defer></script>
+<script src="js/report.js?v=2" defer></script>
 <script src="js/dashboard.js?v=2" defer></script>
 <script src="js/export.js?v=2" defer></script>
 <script src="js/boot.js?v=2" defer></script>       <!-- last: App.boot() -->
@@ -96,11 +106,33 @@ Same files, plus `config.js` (public URL + publishable key). `store.js` gains a 
 
 ### 2.1 Customers and call log (rows are the same in localdb and Postgres)
 
-Customer row: `{ id, name, contact, contact_from, city, state, phone, last_order, follow_up, status, disputed, source /* seed|manual */, created_at, updated_at, updated_by }`
+Customer row: `{ id, name, contact, contact_from, city, state, phone, last_order, follow_up, status, disputed, grp, segment, vehicle_segment, plants, source /* seed|manual */, created_at, updated_at, updated_by }`
+
+**P2-K fields.** All are optional, blank by default, and **never invented or guessed**:
+
+| Row | UI / customers.json | Values | Default |
+|---|---|---|---|
+| `grp` | `group` | free text ≤ 80 (parent group, e.g. "Sangkaj Industries"); the UI suggests existing groups | `""` |
+| `segment` | `segment` | `SEGMENTS = ["OEM", "Tier-1", "Tier-2", "Trader", "Export"]` or `""` | `""` |
+| `vehicle_segment` | `vehicleSegment` | `VEHICLE_SEGMENTS = ["PV", "CV", "Tractor", "2W", "Off-highway", "Other"]` or `""` | `""` |
+| `plants` | `plants` | array (≤ 20) of `{ id /* uuid */, name /* ≤ 80, may be "" */, city /* ≤ 60 */, state /* ≤ 60 */ }` | `[]` |
+
+- **Derived city/state:**
+  - If `plants.length > 0`, then on every save `city = plants[0].city` and `state = plants[0].state`, so the table, search, exports and stage B always have a main location.
+  - If `plants` is empty, the old `city`/`state` stay as they are. They are shown as today, and a state alone is shown in grey italic as "from the GST number".
+  - The plant ids let a future parts master and visit reports link to a plant (§11).
+- **Extended `customers.json` shape**, backwards compatible. The current file, without these keys, loads unchanged. Export writes them always:
+  ```json
+  { "id": "sangkaj-industries-pvt-ltd", "name": "SANGKAJ INDUSTRIES PVT. LTD.", "contact": "", "contactFrom": "",
+    "city": "", "state": "Maharashtra", "phone": "…", "last": "2026-07-01", "followUp": "", "status": "Active",
+    "disputed": false, "group": "", "segment": "", "vehicleSegment": "", "plants": [] }
+  ```
+  Exact export keys: `id,name,contact,contactFrom,city,state,phone,last,followUp,status,disputed,group,segment,vehicleSegment,plants`.
+- **Seed validation:** unknown `segment` or `vehicleSegment` values become `""`, and plants with no city and no state are dropped. If anything was dropped, a `notice` says "2 customers had a segment value that is not in the list; it was left blank."
 
 Log row: `{ id /* uuid */, customer_id, at, type /* Call|Visit|Email|Telegram|Note */, note /* ≤500 */, done_follow_up, next_follow_up, created_at, created_by }`
 
-UI objects use the Phase 1 camelCase names: `id, name, contact, contactFrom, city, state, phone, last ('' = none), followUp ('' = none), status, disputed, added (source==="manual"), updatedAt, createdAt`. LogEntry: `{ id, customerId, at, type, note, doneFollowUp, nextFollowUp, createdAt }`.
+UI objects use the Phase 1 camelCase names: `id, name, contact, contactFrom, city, state, phone, last ('' = none), followUp ('' = none), status, disputed, group, segment, vehicleSegment, plants, added (source==="manual"), updatedAt, createdAt`. LogEntry: `{ id, customerId, at, type, note, doneFollowUp, nextFollowUp, createdAt }`.
 
 **Slug rule** (`Store.slug`, also used by the stage B seed script):
 ```js
@@ -160,6 +192,23 @@ ImportMeta = { fileName, fileDate /* ISO from File.lastModified */, asOf /* YYYY
   - **overdue and aging buckets** come from AGING;
   - with only one file imported, show what that file has and an "Import <other tab> to see <x>" hint;
   - if LIVE_POSITION has its own overdue column and AGING is missing, use it.
+
+### 2.4b Revenue `varsha-crm-revenue-v1` and targets `varsha-crm-targets-v1` (P2-L)
+
+```
+revenue = { v: 1,
+  meta: ImportMeta & { firstDate, lastDate /* = "data through" */, duplicates: n },
+  rows: [{ invoiceNo, date /* YYYY-MM-DD */, customerId /* or null */, sourceName /* "Customer" column */,
+           onInvoice /* "Customer On Invoice" */, erpGroup /* "ERP Group" */, taxable /* number, may be negative */ }] }
+targets = { v: 1,
+  byFy: { "2026-27": { customers: { "<customer id>": 2500000 }, segments: { "OEM": 40000000 } } },
+  settings: { concentrationPct: 25 } }
+```
+- **Never stored:** `GSTIN` (CLAUDE.md rule 1), `CGST`, `SGST`, `IGST`, `TCS`, `Invoice Amount`, `PO No`, `Terms Days`, `Due Date`, `Source File`, `Match Method`, `Parser`, `Source File Id`. The importer keeps only the fields in the spec. A test checks that the fixture GSTIN is not anywhere in localStorage.
+- **Duplicates:** the same `Invoice No` + `Invoice Date` appearing twice keeps the first row and reports the count. Negative Taxable values (credit notes) are kept and summed.
+- **India financial year:** `fyOf(iso)` gives `"2026-27"` for 1 Apr 2026 to 31 Mar 2027. Months run April to March.
+- **Revenue is in neither the backup nor `customers.json`** (it is re-imported from the sheet). **Targets are in the backup** (typed by the user, so they cannot be re-imported), with a "contains targets" line on the backup card.
+- Optional user action after an import: **"Update Last order from this file"**. For matched customers where the file's newest invoice date is later than `last`, it sets `last` through `Store.saveCustomer`. It is never automatic.
 
 ### 2.5 RFQs (assumed fields; to confirm when the RFQ sheet arrives)
 
@@ -221,7 +270,7 @@ The import dialog lists unmatched names, each with a `<select>`: "Choose custome
 ### 3.1 Stage A
 - No backend, no keys, no login. Data stays in the browser it was typed or imported in.
 - **Git rules:**
-  - `customers.json` export has exactly `id,name,contact,contactFrom,city,state,phone,last,followUp,status,disputed`;
+  - `customers.json` export has exactly `id,name,contact,contactFrom,city,state,phone,last,followUp,status,disputed,group,segment,vehicleSegment,plants` (no notes, no amounts, no revenue, no targets);
   - the backup has no money;
   - `.gitignore` (A1) gets `*.csv`, `varsha-crm-backup-*.json`, `supabase/.generated/`, `.env*`, `node_modules/`;
   - test fixtures are built in code with made-up amounts, never files of real data.
@@ -267,7 +316,9 @@ window.Store = {
 
   // customers + call log (rich API)
   customers(), get(id), latestOrder() /* max last */,
-  addCustomer(f), saveCustomer(id, {name, contact, phone, city, last}), setStatus(id, s), setFollowUp(id, iso),
+  addCustomer(f), saveCustomer(id, {name, contact, phone, city, last, group, segment, vehicleSegment, plants}) /* any subset */,
+  setStatus(id, s), setFollowUp(id, iso),
+  groups(): string[] /* distinct non-empty groups, sorted */, SEGMENTS, VEHICLE_SEGMENTS,
   removeCustomer(id) /* refuses if referenced (§2.2) */, refs(id) /* {rfqs, visits, orders} counts */,
   listLog(id) /* newest first */, allLog(), logCount(id), lastContacted(id) /* among CONTACT_TYPES */,
   addLog(id, {at?, type, note}), markDone(id, {type, note?, next?}),
@@ -280,12 +331,12 @@ window.Store = {
     remove(id): Promise<Result>,
     replaceAll(rows): Promise<Result>          // imports (orders)
   },
-  // documents: "money" | "aliases" | "orders_meta"
+  // documents: "money" | "aliases" | "orders_meta" | "revenue" | "targets"   (each in its own localStorage key, §1.1)
   doc(name): { get(): object|null, set(obj): Promise<Result>, clear(): Promise<Result> },
 
   // exports
   exportCustomersJson(): {note, customers},                    // exact keys §3.1; no notes, no amounts
-  exportBackup(): { format: "varsha-crm-backup-v2", exportedAt, note, customers, callLog, rfqs, rfqHistory, visits, orders, ordersMeta }  // NO money
+  exportBackup(): { format: "varsha-crm-backup-v2", exportedAt, note, customers, callLog, rfqs, rfqHistory, visits, orders, ordersMeta, targets }  // NO money, NO invoices
 };
 // CONTACT_TYPES = ["Call","Visit","Email","Telegram","Note"] (constant; assumption A6 in §10)
 ```
@@ -339,7 +390,7 @@ window.CrmCsv = {
   - suffix `Cr` means negative (credit balance), `Dr` means positive;
   - then it must match `/^\d+(\.\d+)?$/`, else `{ok:false}`;
   - round to 2 decimals.
-- **`parseDate`:** accepts `YYYY-MM-DD`, `DD/MM/YYYY`, `DD-MM-YYYY`, `DD.MM.YYYY`, `DD/MM/YY` (20YY), `D-Mon-YYYY` / `DD Mon YYYY` (Jan–Dec, any case). **Always day-first** (India). It validates real dates (no 31/02). Empty becomes `null`.
+- **`parseDate`:** accepts `YYYY-MM-DD`, `DD/MM/YYYY`, `DD-MM-YYYY`, `DD.MM.YYYY`, `DD/MM/YY` (20YY), `D-Mon-YYYY` / `DD Mon YYYY` / **`DD-Mon-YY`** (e.g. `01-Apr-26` -> 2026-04-01, the INVOICE_REGISTER format) (Jan–Dec, any case). **Always day-first** (India). It validates real dates (no 31/02). Empty becomes `null`.
 - **`parseInt`:** after removing commas it must be `/^\d+$/`. Empty becomes `null`.
 
 ### 4.4 `CrmImport` (`js/importer.js`): the shared Import dialog
@@ -377,7 +428,10 @@ Dialog `#importDlg` (built by importer.js once, reused):
 
 ```js
 CrmCustomers = { openDone(id), openNotes(id), openEdit(id), visible(): Customer[], summary(): string };
-// list filter: { view?, filter?, q?, sort?, extra? }; extra kinds:
+// list filter: { view?, filter?, q?, sort?, segment? /* SEGMENTS | "none" */, vseg? /* VEHICLE_SEGMENTS | "none" */,
+//                group? /* a group name | "none" */, extra? }   (segment, vseg and group combine with everything else)
+// sort keys: name | last | follow | status | overdue | revenue
+// extra kinds:
 //  {kind:"last", value:"0-30"|"31-60"|"61-90"|"91+"|"never", ref} {kind:"state", value} {kind:"disputed"}
 //  {kind:"contact", value:"7d"|"30d"|"stale30"} {kind:"due", value:date} {kind:"ids", value:[id], label}
 //  {kind:"money", value:"overdue"|"outstanding"} {kind:"aging", value:"b1_30"|"b31_60"|"b61_90"|"b90"}
@@ -410,8 +464,31 @@ CrmSchedule = {
 };
 // schedule filter: { sub?: "visits"|"orders", month?: "YYYY-MM", day?: date, vflag?: "missed"|"next7"|"today",
 //                   oflag?: "late"|"today"|"week"|"open"|"all", customerId?, q? }
+
+CrmRevenue = {
+  has(), meta(): ImportMeta & {firstDate, lastDate} | null, openImport(), clear(): Promise<Result>,
+  fyOf(iso): "2026-27", fyRange(fy): {start, end}, fys(): string[] /* FYs present in the data, newest first */,
+  forCustomer(id, fy?): { fytd, mtd, lastInvoice } | null,
+  stats(opts: { fy?, to: "today"|"data" }): null | {
+    fy, to /* the date measured to */, dataThrough /* lastDate */, fytd, mtd, mtdLabel /* "July 2026" */,
+    prior: { fytd, changePct } | null,                              // only if the file has prior-FY rows
+    months: [{ ym: "2026-04", label: "Apr", amount, prior /* number or null */, ids: [customer ids] }],  // 12 items, Apr..Mar
+    top10: [{ id, name, amount, share }], top1Share, top5Share,
+    concentration: { thresholdPct, risk: boolean, id, name, share },
+    bySegment: [{ segment /* "" = not set */, amount, share, ids }],   // CRM segment of matched customers
+    byGroup:   [{ group /* ERP Group, "" = none */, amount, share, ids }],
+    unmatched: { n, amount },
+    targets: null | { basis: "customers"|"segments", total, actual, pct, pacePct, behind: boolean,
+                      customers: [{ id, name, target, actual, pct, behind }], segments: [{ segment, target, actual, pct, behind }] } },
+  openTargets(), setConcentration(pct): Promise<Result>
+};
+
+CrmReport = {
+  open(opts?: { from?, to? }),                      // default: IST today-6 .. today
+  compute(range, deps): ReportModel                 // pure; deps = { customers, log, visits, rfqs, rfqHistory, stats: {money, rfq, orders, revenue} }
+};
 ```
-- Pure stats functions also go into `module.exports` for unit tests: `rfqStats(rfqs, history, customers, today)`, `moneyStats(doc, customers, today)`, `visitStats(...)`, `orderStats(...)`.
+- Pure stats functions also go into `module.exports` for unit tests: `rfqStats(rfqs, history, customers, today)`, `moneyStats(doc, customers, today)`, `visitStats(...)`, `orderStats(...)`, `revenueStats(doc, customers, targets, today, opts)`, `reportCompute(...)`.
 - If a module is missing (stub), `window.CrmX` is undefined. The Dashboard shows that card's "Not available yet" state and does not error.
 
 ---
@@ -497,6 +574,28 @@ CrmSchedule = {
   ```
   At ≤ 860px, actions align left and `.btn-sm` gets `min-height: 40px`.
 
+### 5.2b Plants, group and segment on the Customers tab (P2-K; `customers.js`, A2)
+
+- **Table and card:**
+  - Under the name, before `.lc`, a `.tags` line of small outline badges, each shown only when set: `Group: Sangkaj Industries` (navy outline), `OEM` (segment), `CV` (vehicle).
+  - Badges are `<button class="tag-btn">`, and clicking one applies that filter (`segment`, `vseg` or `group`). `aria-label="Show all customers in group Sangkaj Industries"`.
+  - Badges are neutral navy, never status colours.
+- **City column:**
+  - With plants: `plants[0].city` (or `plants[0].state` if there is no city), then `<span class="badge-lite">+2 plants</span>` when there are more. Its `title` lists all plants ("Chakan, Maharashtra; Hosur, Tamil Nadu"). In the 375px card the full plant list shows as a small list under the label "Plants".
+  - Without plants: Phase 1 behaviour.
+- **Filter row** (a third `.bar`, before the extra chip):
+  - `<label>Segment <select id="fSegment">` All / OEM / Tier-1 / Tier-2 / Trader / Export / Not set;
+  - `<select id="fVseg">` All / PV / CV / Tractor / 2W / Off-highway / Other / Not set;
+  - `<select id="fGroup">` All / each group from `Store.groups()` with its count / Not set.
+  The options carry counts ("OEM (6)"). The filters combine with the chips, search and extra filter, and persist in `panels.list`. At 375px the three selects stack full width.
+- **Search** also matches group, plant names and plant cities.
+- **Add/Edit dialog**, new sections after the contact fields, in this order:
+  1. "Group and segment": `group` (`<input list="groupList">` with a datalist from `Store.groups()`, ≤ 80); `segment` and `vehicleSegment` (`<select>` with a blank "Not set" first). Nothing is preselected.
+  2. "Plants and units": a list of rows, each with name (placeholder "e.g. Chakan plant"), city and state inputs, and a "Remove" button (`aria-label="Remove plant 2"`). Then "+ Add plant" (maximum 20). Help text: "The first plant is shown as the customer's city." Edit mode only: a "Make main" button on rows 2 and later moves that plant to the top.
+  - The old single **City** input stays in the dialog only while the plant list is empty. When the user adds the first plant, it is prefilled with the current city and state (moved, not invented) and the City input hides.
+  - Validation: each plant needs a city or a state ("Plant 2 needs a city or a state."); lengths as in §2.1.
+  - The dialog body scrolls (`max-height: calc(100dvh - 120px); overflow-y: auto`), so it fits at 375px.
+
 ### 5.3 Money (P2-G; `money.js` + importer)
 
 - **Entry points:** the Dashboard money card "Import money data" (`#moneyImportBtn`), the Customers tab toolbar button "Import money" (only before any money is imported; afterwards the column title links to it), and the Export tab "Data in this browser" card.
@@ -520,6 +619,56 @@ CrmSchedule = {
 - **Empty state** (Dashboard money card, no money data): "No money data yet. Export the AGING and LIVE_POSITION tabs of the VFPL Collections Engine sheet as CSV and import them here. Amounts stay in this browser only and are never saved to git." plus the Import button.
 - **Stale:** `asOf` older than 7 days shows orange text "Money data is 12 days old. Import a fresh file." Totals stay visible.
 - Money never appears in `customers.json`, the backup, or CSV/copy unless the user ticks "Include amounts" (§5.7).
+
+### 5.3b Revenue analytics (P2-L; `revenue.js`, A7)
+
+**Import** (`CrmImport.open` spec `invoices`, **exact INVOICE_REGISTER headers**, normalised before comparing):
+
+| field | header | required | type |
+|---|---|---|---|
+| invoiceNo | `Invoice No` | yes | text |
+| date | `Invoice Date` | yes | date (`01-Apr-26`) |
+| sourceName (customerField) | `Customer` | yes | text (exact CUSTOMER_MASTER names, so `matchCustomer` step 2) |
+| onInvoice | `Customer On Invoice` | no | text |
+| erpGroup | `ERP Group` | no | text |
+| taxable | `Taxable` | yes | amount (text with commas) |
+
+- Every other column (GSTIN, PO No, Terms Days, Invoice Amount, Due Date, Source File, CGST, SGST, IGST, TCS, Match Method, Parser, Source File Id) is **ignored and not stored**.
+- `skipRow`: a blank Invoice No, or a "Total" row.
+- The intro text says: "Export the INVOICE_REGISTER tab of the Collections sheet as CSV. **Revenue uses the Taxable column (before GST and TCS). Invoice Amount is not used.** The file is read in this browser only."
+- After Confirm, the result line reads "Data through 12 Jul 2026 · 1,200 invoices · 2 duplicates ignored". Then an optional button "Update Last order for 38 customers from this file" (§2.4b), and an optional button "Fill 9 blank groups from ERP Group". That second button only sets a customer's `group` when it is `""` and every invoice row for that customer has the same ERP Group. It is an explicit user action.
+- "Clear invoice data" (with confirm) is on the revenue card and on the Export data card.
+
+**Revenue card on the Dashboard** (section 2b, after Money). Needs `CrmRevenue.stats`; empty state below.
+- Head: the title "Revenue (Taxable, before GST)". Controls: an FY select (`CrmRevenue.fys()`, default the current IST FY) and "Measure to: [Last invoice date] [Today]" (default **last invoice date**, persisted `panels.dash.revTo`). The line "Data through 12 Jul 2026" turns orange with text "Invoice data is N days old" when older than 30 days.
+- **Tiles:**
+  - "FY 2026-27 to date ₹X". It shows "vs same period last FY +12%" only when the file has prior-FY rows. Click → `list {extra:{kind:"ids", value: all invoiced ids, label:"Invoiced in FY 2026-27"}, sort:"revenue"}`.
+  - "Month to date (July 2026) ₹Y". Click → the ids invoiced that month.
+- **Monthly trend:** 12 vertical CSS columns Apr→Mar (`.vbars`, `display:grid; grid-template-columns: repeat(12, minmax(0,1fr))`), each a button with the month label and amount (`moneyShort`), height via `style.height`. Prior-FY values (if any) show as a thin grey marker line in each column, with the legend "Last FY". Months after "measure to" are empty. Click → `{extra:{kind:"ids", value: month.ids, label:"Invoiced in Jul 2026"}}`. At 375px the labels shrink to first letters (A M J J A S O N D J F M) and amounts show in each button's `aria-label` and in a details list below.
+- **Top 10 customers:** `.hbar` rows "ZF STEERING… ₹1.2 Cr · 18%" → `{kind:"ids", value:[id]}`. "Show these 10" → all ten.
+- **Concentration:**
+  - "Top customer 31% · Top 5 64%".
+  - If top 1 share > threshold: red text "Concentration risk: <name> is 31% of revenue (limit 25%)". Otherwise grey "Top customer below the 25% limit".
+  - Threshold: `<input type="number" id="concPct" min="5" max="90" step="1">` "%" (default 25, persisted in targets settings).
+  - The numbers click → the ids of top 1 or top 5.
+- **Share by segment** (CRM segment, "Not set" last) → `list {segment}` (or `"none"`). **Share by group** (ERP Group from the file, top 8 + "Show all") → `{kind:"ids", value: ids, label:"ERP Group: X"}`. Each bar shows the amount and %. The segment card says: "Set segments on the Customers tab (Edit) to fill this chart."
+- **Target vs actual:**
+  - "Targets FY 2026-27: ₹A of ₹T (42%)", with a progress bar (navy fill and a 2px orange **pace marker** at `pacePct`).
+  - Pace = days elapsed in the FY up to "measure to" ÷ days in the FY.
+  - If `pct < pacePct`, red text **"Behind pace: 42% of target, 55% expected"**; else green text "On pace".
+  - Basis: customer targets if any are set for this FY, otherwise segment targets (shown as "Based on segment targets").
+  - A list of the 5 most-behind customers (or segments) with mini bars → `ids`/`segment` filter. "Behind pace (N customers)" → `{kind:"ids", value, label:"Behind target pace"}`.
+  - "Set targets" button → `CrmRevenue.openTargets()`.
+  - No targets: "No targets set for FY 2026-27." + "Set targets".
+- **Targets dialog** `#targetsDlg`:
+  - FY select at the top.
+  - Two sections, "By customer" and "By segment". Each row: name/segment, actual FYTD (read-only), and an annual target input (`inputmode="decimal"`, parsed with `parseAmount`, blank = no target). Plus a filter box for the customer list.
+  - Save writes `Store.doc("targets")`. Errors: "Row ZF…: target is not a number."
+  - At 375px the rows stack.
+  - The hint at the top says: "Targets are kept in this browser and in the private backup. They are never saved to git."
+- **Empty state** (no invoice data): "No invoice data yet. Export the INVOICE_REGISTER tab of the VFPL Collections Engine sheet as CSV and import it here. Revenue uses the Taxable column (before GST and TCS). Amounts stay in this browser only." + "Import invoices" `#revImportBtn`.
+- **Customers tab** (A2, via `CrmRevenue.forCustomer`): when revenue exists, the money cell gets a third line "FY revenue ₹X", plus sort key `revenue`. Without money data it still shows in the same column (header "Money").
+- Every amount follows Hide amounts. Totals include unmatched rows ("Includes ₹X from N names not in the CRM" → opens the import's unmatched list). Per-customer figures use matched rows only.
 
 ### 5.4 RFQs tab (P2-H/J; `rfqs.js`)
 
@@ -613,6 +762,7 @@ Sub-tabs (`role=tablist` inside the panel, persisted): **Visits & calls** (defau
 - "As of Monday, 19 October 2026 (India time)";
 - `#hideAmt` toggle "Hide amounts" (`aria-pressed`, persisted);
 - `#printBtn` "Print / Save as PDF" (`no-print`);
+- `#weeklyReportBtn` "Weekly sales review" (`no-print`) → `CrmReport.open()`. Hidden if `CrmReport` is missing;
 - `#printHead` (print only): logo 48px + "Varsha Forgings · CRM dashboard · 19 Oct 2026 (India time)".
 
 **Sections, in order.** Every card is `section.dcard[aria-labelledby]` with an `h2`. **Every number is a `<button>`** that calls `App.show(tab, filter)`. Clicking it must show exactly that many rows or cards.
@@ -639,6 +789,8 @@ Sub-tabs (`role=tablist` inside the panel, persisted): **Visits & calls** (defau
    - Footer: "Data as of 18 Oct 2026 (AGING), 18 Oct 2026 (LIVE_POSITION)", plus "Includes ₹X for N names not in the CRM" (button → `CrmMoney.openImport()`), plus "Import money data".
    - Amounts follow Hide amounts.
    - Out of scope for stage A: payment trends over time (needs history kept in the stage B database).
+
+2b. **Revenue** (`span 12`): see §5.3b. Needs `CrmRevenue`; empty state there.
 
 3. **Attention now** (`span 7`): overdue follow-ups (oldest first, then name), then due today.
    - Each item: name (button → `openNotes`) · red "Overdue by N days" / orange "Due today" · contact and `tel:` phone · last contacted · overdue amount if money exists (red, with "overdue") · `✓ Done` → `CrmCustomers.openDone(id)` · `Notes n` → `openNotes(id)`.
@@ -682,14 +834,20 @@ Sub-tabs (`role=tablist` inside the panel, persisted): **Visits & calls** (defau
      - A toggle "Count days from: Today | Latest order in the data (12 Jul 2026)" (persisted `panels.dash.from`).
      - Bars 0–30 / 31–60 / 61–90 / 91+ / No order on record → `list {extra:{kind:"last", value, ref}}`.
      - Note: "Last order dates come from the Collections sheet, which stops at 12 Jul 2026 …". The date comes from `Store.latestOrder()`.
-   - **By state:** bars (top 8 + "Show all") → `list {extra:{kind:"state", value}}`; "Not known" last, grey italic; note "State comes from the GST number."
+   - **By state:** bars (top 8 + "Show all") → `list {extra:{kind:"state", value}}`; "Not known" last, grey italic; note "State comes from the GST number." The state is the derived main state (§2.1).
+
+8b. **Segments and groups** (P2-K), two cards (`span 6` each; `span 12` at ≤ 860px):
+   - **By segment:** bars for OEM / Tier-1 / Tier-2 / Trader / Export / Not set, showing the customer count, plus overdue ₹ if money is imported and FY revenue ₹ if revenue is imported (small dim text). Click → `list {segment}` (`"none"` for Not set).
+   - A small **By vehicle segment** row of chips (PV 3 · CV 9 · …) under it → `list {vseg}`.
+   - **By group:** groups with ≥ 1 customer, sorted by customer count then name, top 8 + "Show all". Each row is "Sangkaj Industries · 2 customers · overdue ₹… · revenue ₹…" → `list {group}`. The tile "Customers with no group: N" → `list {group:"none"}`.
+   - Empty (no segment or group set on anyone): "No segments or groups set yet. Use Edit on a customer to add them." The counts still show "Not set 42".
 
 9. **Activity:**
    - Tiles "Contacted in last 7 days", "Last 30 days", "Not contacted in 30+ days" (customer counts) → `list {extra:{kind:"contact", value}}`.
    - Recent activity: the 10 newest log entries (date · type · customer button → `openNotes` · "Follow-up done" tag · `.snippet` up to 80 chars).
    - **Empty state:** "No calls or notes logged yet. When you finish a follow-up, press ✓ Done on the customer; use Notes to record any call or visit." + "Go to Attention now".
 
-10. **Quick links** (`no-print`): "Download Attention list (CSV)" (via `CrmCsv`), "Open the Export tab".
+10. **Quick links** (`no-print`): "Weekly sales review" (→ `CrmReport.open()`), "Download Attention list (CSV)" (via `CrmCsv`), "Open the Export tab".
 
 **Grid:** `.dgrid { display:grid; grid-template-columns: repeat(12, minmax(0,1fr)); gap:16px }`. Sections 1, 2, 5, 7 and 9 are `span 12`; 3 is `span 7` and 4 is `span 5`; 6 is `span 12` (or `span 5` next to a `span 7` funnel when wide); the three cards of section 8 are `span 4` each. At ≤ 860px everything is `span 12`.
 
@@ -709,29 +867,63 @@ Sub-tabs (`role=tablist` inside the panel, persisted): **Visits & calls** (defau
 
 1. **Customers:** scope radios "Customers in the Customers tab now (N), with current filters" (default) / "All customers (M)" (persisted). Show the `CrmCustomers.summary()` line. Two checkboxes, **unticked on every load and never remembered**:
    - "Include notes text (private)";
-   - "Include amounts (private)". Shown only if money exists; it adds the columns Outstanding, Overdue, 1–30, 31–60, 61–90, >90. There is still only one header row, so Sheets stays clean.
+   - "Include amounts (private)". Shown only if money or revenue exists; it adds the columns Outstanding, Overdue, 1–30, 31–60, 61–90, >90, and FY revenue (Taxable). There is still only one header row, so Sheets stays clean.
 2. Buttons:
    - **Download CSV** `#csvBtn`.
    - **Copy for Google Sheets** `#copyBtn`, with fallback `#copyFallback` + `#copyBox` (readonly textarea, selected) when `navigator.clipboard.writeText` rejects. The text says to press Ctrl+C or long-press, then Copy; `execCommand("copy")` is tried.
    - **Download customers.json** `#export` (all customers, no notes, no amounts; git-safe).
-   - **Download backup** `#backup` (customers, notes, RFQs, history, visits, orders; **no money**): "Private. Never commit it."
+   - **Download backup** `#backup` (customers, notes, RFQs, history, visits, orders, targets; **no money, no invoices**): "Private: contains notes and targets. Never commit it."
+   - **Weekly sales review** `#weeklyReportBtn2` → `CrmReport.open()` (§5.9b).
 3. **RFQs CSV** `#rfqCsvBtn`: scope "RFQs shown in the RFQs tab now" / "All RFQs". Columns: RFQ no, Customer, Part name, Part no, Qty, Received, Quote due, Quoted value, Stage, Stage since, Next action, Lost, Notes. The value column is included because RFQ data is the user's own pipeline; the warning line says "Contains quoted values (private)."
 4. **Visits CSV** `#visitCsvBtn` (all): Date, Time, Type, Customer, Note, Done.
 5. **Send to Google Sheet automatically** `#autoBtn` (disabled, "Coming next"; design in §8.6).
 6. **Data in this browser** (`#dataCard`):
-   - counts of customers, notes, RFQs, visits, orders ("as of …"), money ("AGING as of …, LIVE_POSITION as of …");
-   - buttons "Clear imported money data" (→ `CrmMoney.clear("all")`) and "Clear imported orders" (→ `CrmSchedule.clearOrders()`), each with a confirm;
+   - counts of customers, notes, RFQs, visits, orders ("as of …"), money ("AGING as of …, LIVE_POSITION as of …"), invoices ("1,200 invoices, data through 12 Jul 2026"), targets ("FY 2026-27: 12 customers, 2 segments");
+   - buttons "Clear imported money data" (→ `CrmMoney.clear("all")`), "Clear imported orders" (→ `CrmSchedule.clearOrders()`) and "Clear invoice data" (→ `CrmRevenue.clear()`), each with a confirm;
    - the note "To move everything to another browser, download the backup and import it there." **Backup import is out of scope for stage A** (stage B makes it unnecessary). The note says "Backup import comes with the shared database."
 7. `#exportMsg` (`role=status`).
 
 CSV rules (`CrmCsv`):
-- `"﻿"` + RFC 4180 (every field quoted, `"` doubled), CRLF rows with a trailing CRLF.
+- A BOM (`\uFEFF`, written as that escape in the JS source) + RFC 4180 (every field quoted, `"` doubled), CRLF rows with a trailing CRLF.
 - `safeCell` prefixes `'` to cells starting with `= + - @ \t \r`.
 - Dates as `YYYY-MM-DD`; amounts as plain numbers with 2 decimals (no ₹ or commas, so Sheets sums them).
-- Customer columns: Customer, Contact person, Phone, City, Last order, Follow-up, Status, Last contacted, Notes count [, Notes] [, amount columns].
+- Customer columns, in this exact order: Customer, Contact person, Phone, City, Group, Segment, Vehicle segment, Plants, Last order, Follow-up, Status, Last contacted, Notes count [, Notes] [, amount columns].
+  - Plants: `"Chakan plant (Chakan, Maharashtra); Hosur (Hosur, Tamil Nadu)"`, or empty.
 - **Never** emails, GST, ids or timestamps.
 - TSV: values have `\t\r\n` replaced by a space.
 - File names: `varsha-crm-customers[-shown]-<IST date>.csv`, `varsha-crm-rfqs-<date>.csv`, `varsha-crm-visits-<date>.csv` (all match `*.csv` in `.gitignore`).
+
+### 5.9b Weekly sales review (P2-M; `report.js` + `css/report.css`, A8)
+
+- **Opened** from `#weeklyReportBtn` (Dashboard) and `#weeklyReportBtn2` (Export). It is a full-screen `<dialog id="reportDlg" class="report">`, not a tab.
+- **Controls bar** (`no-print`):
+  - "From" / "To" dates (default **IST today − 6 … today**, max today, From ≤ To);
+  - "Last 7 days" reset;
+  - `<label><input type="checkbox" id="repNotes"> Include note text (private)</label>`, unticked on every open and **never remembered**;
+  - "Print / Save as PDF" `#repPrint`; Close.
+  - The range is also not remembered: it reopens on the last 7 days, a deliberate exception like the notes box.
+- **Page** `#reportPage` (an A4 sheet on screen: `width: 210mm; min-height: 297mm; padding: 12mm; background:#fff`; scaled down to fit at ≤ 860px with `width: 100%` and no sideways scroll). It is built with `textContent`, at 10pt base type:
+  1. **Header:** logo 40px + "Varsha Forgings · Weekly sales review" + "13 Oct – 19 Oct 2026 (India time)" + "Prepared 19 Oct 2026". Data-as-of dates for money, orders and invoices go in a small footer line.
+  2. **Headline row** (6 small boxes): Overdue follow-ups (red word "Overdue") · Due in next 7 days · Calls/visits logged · RFQs moved · Late orders · Revenue FYTD vs target (%). A box is omitted when its module or data is missing.
+  3. **RFQ pipeline:** a one-line funnel "Received 4 → Quoted 3 → Negotiated 2 → Finalised 1 → PO 2 → Sample 0 → PPAP 1". Then **stage movements in range**, from `rfq_history` rows with `at` in range, newest first, at most 8 + "+N more": "15 Oct · RFQ 123 · ZF STEERING… · Received → Quoted". Then "New RFQs in range: N" and "Quote overdue: N" (red text).
+  4. **Follow-ups:** overdue (oldest first: name, "Overdue by N days", contact, phone), at most 8; then due in the next 7 days, at most 8.
+  5. **Contact this week:** counts by type from call-log entries with `at` in range, plus done visits/calls in range that have no `log_id` (no double counting). Then a comma-separated list of customer names. Note text, one line each, only when `#repNotes` is ticked.
+  6. **At-risk customers:** status "At risk", sorted by last contacted (oldest or never first): name · last order · last contacted. At most 10 + "+N more".
+  7. **Money overdue** (only if imported): total overdue (red, with text), the aging split in one line, the top 5.
+  8. **Late orders** (only if imported): count (red, with text) + at most 5 rows.
+  9. **Revenue vs target** (only if imported): FYTD, % of target, pace words ("Behind pace" in red / "On pace"), "Data through …".
+  10. **Top 5 actions for next week** (derived): overdue follow-ups, **oldest first**, as "Call <name> (<contact>, <phone>): follow-up overdue by N days". If fewer than 5, fill with follow-ups due in the next 7 days (soonest first). The rule is printed in small text: "Actions = overdue follow-ups, oldest first, then the next ones due."
+- **Print:** `#repPrint` adds `body.print-report`, calls `print()`, and removes the class on `afterprint`.
+  ```css
+  @page { size: A4; margin: 0; }
+  @media print { body.print-report > *:not(#reportDlg) { display: none !important; }
+                 body.print-report #reportDlg { position: static; width: auto; height: auto; border: 0; box-shadow: none; }
+                 body.print-report .no-print { display: none !important; }
+                 #reportPage { width: 210mm; height: 297mm; overflow: hidden; break-after: avoid; } }
+  ```
+  `print-color-adjust: exact`. Amounts follow Hide amounts.
+- **One page:** every list has the caps above. If the content still overflows 297mm on screen (measured after render), a `.overflow-warn` line (`no-print`) says "This week has more items than fit on one page; the lists are cut, so open the tabs for the full lists." The test measures the page.
+- **Pure compute:** `CrmReport.compute({from, to}, deps)` returns `{ headline, funnel, moves, newRfqs, quoteOverdue, overdue, dueNext, contact: {byType, names, notes}, atRisk, money, lateOrders, revenue, actions }`. It is unit-tested.
 
 ### 5.8 Shared rules for every dialog, the keyboard and 375px
 
@@ -776,6 +968,8 @@ t = { browser, url, root, data /* customers.json */, check(name, ok, extra), ski
 | A4 | `tests/checks/50-rfqs.js`, `tests/unit/rfqs-unit.js` |
 | A5 | `tests/checks/60-schedule.js`, `tests/checks/70-money.js`, `tests/unit/money-unit.js`, `tests/unit/schedule-unit.js` |
 | A6 | `tests/checks/30-export.js`, `tests/unit/export-unit.js` |
+| A7 | `tests/checks/75-revenue.js`, `tests/unit/revenue-unit.js` |
+| A8 | `tests/checks/80-report.js`, `tests/unit/report-unit.js` |
 
 Cross-module checks (e.g. a dashboard number that needs `CrmRfq`) start with `if (!(await t.has(page, "window.CrmRfq"))) return t.skip(name, "needs A4")`. They must PASS after merge (`--strict`).
 
@@ -794,10 +988,13 @@ Cross-module checks (e.g. a dashboard number that needs `CrmRfq`) start with `if
 - `Phase 1 edits move to the new store` / `... survive a refresh and the notice does not repeat`
 - `extra filter chip shows, clears with ×, and survives a refresh`
 - `customers.json export never includes notes or amounts`
+- `old customers.json without group, segment or plants loads with blanks` (the current file: every customer has `group:""`, `segment:""`, `vehicleSegment:""`, `plants:[]`)
+- `unknown segment in customers.json is left blank with a notice` (via `window.CRM_DATA` in an init script)
+- `export has the new keys` (the exact key set in §3.1)
 
 **A1 · units**
-- csv-unit: parse (quotes, embedded commas and newlines, BOM, `;` and tab delimiters, CRLF); `findHeader` (title rows above the header, missing fields reported); `parseAmount` (`"1,23,456.78"`→123456.78, `"(1,200)"`→-1200, `"−500"`→-500, `"2,000 Cr"`→-2000, `"₹ 3,400"`→3400, `""`→null, `"12a"`→not ok); `parseDate` (`"05/08/2026"`→2026-08-05, `"12-Jul-2026"`, `"31/02/2026"`→not ok); `safeCell`; `toCSV`/`toTSV`.
-- store-unit: slug for all 42 names is unique; `nameKey("Laxmi Agni Components & Forging Pvt.Ltd-V")` equals `nameKey("LAXMI AGNI COMPONENTS AND FORGING PRIVATE LIMITED V")`; `lastBucket`; `fuKind`.
+- csv-unit: parse (quotes, embedded commas and newlines, BOM, `;` and tab delimiters, CRLF); `findHeader` (title rows above the header, missing fields reported); `parseAmount` (`"1,23,456.78"`→123456.78, `"(1,200)"`→-1200, `"−500"`→-500, `"2,000 Cr"`→-2000, `"₹ 3,400"`→3400, `""`→null, `"12a"`→not ok); `parseDate` (`"05/08/2026"`→2026-08-05, `"12-Jul-2026"`, `"01-Apr-26"`→2026-04-01, `"31/02/2026"`→not ok); `safeCell`; `toCSV`/`toTSV`.
+- store-unit: slug for all 42 names is unique; `nameKey("Laxmi Agni Components & Forging Pvt.Ltd-V")` equals `nameKey("LAXMI AGNI COMPONENTS AND FORGING PRIVATE LIMITED V")`; `lastBucket`; `fuKind`; saving plants sets city/state from the first plant; an unknown segment is refused by `validate`; `groups()` is distinct and sorted.
 
 **A1 · 99-final**
 - `no innerHTML in any js file`, `CSP meta present`
@@ -832,20 +1029,37 @@ Cross-module checks (e.g. a dashboard number that needs `CrmRfq`) start with `if
   - `money column appears only after a money import`
   - `overdue amount is red and says Overdue`
   - `sort by overdue puts the largest first`
+- P2-K:
+  - `segment and vehicle segment come from fixed lists and default to Not set`
+  - `group can be typed and is suggested for the next customer`
+  - `adding a plant moves the old city into it`
+  - `first plant drives the City column and "+N plants" shows`
+  - `Make main moves a plant to the top`
+  - `plant without city or state is refused`
+  - `group, segment and plants survive a refresh`
+  - `segment, vehicle and group filters combine with chips and survive a refresh`
+  - `badge click applies its filter`
+  - `search finds a plant city`
+  - `Edit dialog scrolls and fits at 375px`
+- Revenue line (skip without `CrmRevenue`):
+  - `FY revenue line appears after an invoice import`
+  - `sort by revenue puts the largest first`
 - Layout:
   - `no sideways scroll at 375px with the Notes drawer open` / `... Done dialog open`
   - `focus returns to the Notes button after closing the drawer`
 
 **A6 · 30-export** + export-unit
 - `Export tab shows customers, RFQs, visits, backup and data cards`
-- `CSV starts with a BOM and has the exact header` (`﻿"Customer","Contact person","Phone","City","Last order","Follow-up","Status","Last contacted","Notes count"`)
+- `CSV starts with a BOM and has the exact header` (BOM `\uFEFF` then `"Customer","Contact person","Phone","City","Group","Segment","Vehicle segment","Plants","Last order","Follow-up","Status","Last contacted","Notes count"`)
 - `CSV respects the current filter` / `"All customers" has every row`
 - `no notes unless ticked` / `no amounts unless ticked`
 - `both boxes are unticked after a refresh` / `scope survives a refresh`
 - `CSV guards formulas`
 - `CSV has no emails or GST`
 - `Copy puts tab-separated rows on the clipboard` / `Copy falls back when the clipboard is blocked`
-- `backup has notes, RFQs and visits but no money`
+- `backup has notes, RFQs, visits and targets but no money and no invoices`
+- `Weekly sales review button opens the report` *(needs A8)*
+- `data card shows invoice data-through date and Clear invoice data works` *(needs A7)*
 - `Clear imported money data removes amounts after confirm`
 - `RFQs CSV has the expected header and respects the RFQ filter`
 - `automatic Sheet export is disabled and marked coming next`
@@ -867,6 +1081,10 @@ Cross-module checks (e.g. a dashboard number that needs `CrmRfq`) start with `if
 - *(needs A5)* `money tiles show totals after import`, `aging legend opens customers with that bucket`, `top 5 overdue are clickable and sorted`, `Hide amounts masks every amount and survives a refresh`
 - *(needs A4)* `RFQ funnel counts per stage open the RFQ table`, `Quote overdue tile is red and opens the matching RFQs`, `Released parts counts Finalised and later and opens them`, `released parts note asks the user to confirm`
 - *(needs A5)* `next 7 days visits list opens the Schedule day`, `late orders tile is red and opens late orders`
+- `segment bars open the segment filter` / `group rows open the group filter` / `"Not set" opens customers with no segment` (set 2 segments and 1 group of 2 customers in the test first)
+- `segments-and-groups empty state shows when none are set`
+- *(needs A7)* `revenue card shows the empty state before import and says Taxable is used`, `revenue tiles, trend, top 10 and concentration render after import`, `month column opens customers invoiced that month`
+- *(needs A8)* `Weekly sales review button opens the report`
 - `dashboard survives a refresh`
 - `no sideways scroll on the Dashboard at 375px`
 - `print view shows the logo, hides tabs and note text`
@@ -919,6 +1137,47 @@ Cross-module checks (e.g. a dashboard number that needs `CrmRfq`) start with `if
 - `Clear imported money data removes it`
 - `amounts never appear in the customers.json export or the backup`
 
+**A7 · 75-revenue** + revenue-unit (`fyOf`; `revenueStats`: FYTD/MTD with both "measure to" choices, 12 months Apr–Mar, top10 order, top1/top5 share, concentration flag, bySegment/byGroup shares add up to 100%, prior FY only with prior rows, pace %, behind flag, customer basis beats segment basis)
+
+The fixture is built in the test: about 12 invoice rows with the exact INVOICE_REGISTER headers, made-up amounts, a made-up GSTIN `27ABCDE1234F1Z5`, Taxable different from Invoice Amount, one duplicate, one unmatched name, one "Total" row, and one prior-FY row in a second fixture.
+- `INVOICE_REGISTER import recognises the exact headers`
+- `revenue uses Taxable, not Invoice Amount`
+- `dates like 01-Apr-26 and numbers with commas parse`
+- `GSTIN and tax columns are never stored` (no `27ABCDE1234F1Z5` and no `CGST` in any localStorage value)
+- `duplicate invoice rows are ignored and reported`
+- `"Data through" shows the last invoice date`
+- `FY to date and month to date match the fixture` (both "measure to" choices)
+- `monthly trend runs April to March` / `month column opens customers invoiced that month`
+- `top 10 is sorted and each bar opens that customer`
+- `concentration risk is red with text above the threshold` / `threshold change survives a refresh`
+- `share by segment and by ERP group add up to 100% and open filters`
+- `prior-year comparison appears only with prior-year rows`
+- `targets per customer and per segment survive a refresh`
+- `behind pace is red and says "Behind pace"` / `on pace says "On pace"`
+- `Update Last order changes only customers with a newer invoice`
+- `Fill blank groups from ERP Group only fills blanks`
+- `empty state before import says Taxable is used`
+- `Clear invoice data removes it after confirm`
+- `revenue never appears in customers.json or the backup`
+- `Hide amounts masks revenue`
+- `no sideways scroll on the revenue card and targets dialog at 375px`
+
+**A8 · 80-report** + report-unit (`compute`: range filtering, stage moves in range only, contact counts without double counting, at-risk order, actions = overdue oldest first then due soonest, caps and "+N more")
+- `report opens from the Dashboard and the Export tab`
+- `default range is the last 7 days in India time`
+- `report shows the logo, title and date range`
+- `stage movements list only moves inside the range`
+- `calls and visits this week are counted with customer names`
+- `note text is hidden unless ticked, and the box is unticked when reopened`
+- `at-risk list matches status At risk`
+- `top 5 actions are overdue follow-ups, oldest first`
+- `money, late orders and revenue sections appear only when imported`
+- `overdue words are red and in text`
+- `print shows only the report` (`emulateMedia({media:'print'})` with `body.print-report`: `#app` hidden, `#reportPage` visible)
+- `report fits one A4 page` (at a 794px viewport the `#reportPage` height ≤ 1123px with a busy fixture: 15 overdue, 12 moves, 20 contacts)
+- `Hide amounts masks report amounts`
+- `no sideways scroll at 375px`
+
 ### 6.3 Review checklist (stage A, lead then user, on GitHub Pages, desktop + phone)
 1. Tabs work and are remembered.
 2. Every dashboard number opens the right list.
@@ -930,6 +1189,9 @@ Cross-module checks (e.g. a dashboard number that needs `CrmRfq`) start with `if
 8. Print preview of the Dashboard: no note text, and amounts hidden when the toggle is on.
 9. Logo badge and favicon look right.
 10. `git status` shows no CSV or backup files.
+11. Set group, segment and plants on a few customers (e.g. the two Sangkaj customers into one group); check the filters and dashboard breakdowns.
+12. Import the real INVOICE_REGISTER CSV: FYTD Taxable matches the sheet's own sum of Taxable for the same dates; "Data through 12 Jul 2026" shows; type a few targets.
+13. Print the Weekly sales review to PDF: one A4 page, logo, the right dates, no note text unless ticked.
 
 ---
 
