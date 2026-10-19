@@ -81,7 +81,8 @@ main { max-width: 1180px; margin: 0 auto; padding: 20px 16px 48px; }
 .banner.info { background: #e6edf8; color: var(--navy); }
 .banner .btn { padding: 7px 14px; font-size: .85rem; }
 .banner-text { flex: 1 1 200px; min-width: 0; overflow-wrap: anywhere; }
-.banner-x { margin-left: auto; font: inherit; font-size: 1.2rem; line-height: 1; border: 0; background: none; color: inherit; cursor: pointer; padding: 4px 8px; border-radius: 6px; }
+.banner-x { margin-left: auto; flex: none; min-width: 36px; min-height: 36px; font: inherit; font-size: 1.4rem; line-height: 1; border: 0; background: none; color: inherit; cursor: pointer; padding: 4px 8px; border-radius: 6px; }
+.banner-x:hover { background: rgba(0,0,0,.08); }
 .coming { padding: 40px 16px; text-align: center; color: var(--ink-dim); background: var(--card); border: 1px solid var(--line); border-radius: 14px; }
 .rule { font-size: .85rem; color: var(--ink-dim); margin: 4px 0 14px; line-height: 1.5; }
 .note { font-size: .8rem; color: var(--ink-dim); }
