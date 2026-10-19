@@ -428,7 +428,7 @@
   }
 
   /* ---------- Add / Edit dialog (#dlg) ---------- */
-  var dlg = null, form = null, editId = "", addCb = null, baseState = "", plantAdds = 0;
+  var dlg = null, form = null, editId = "", addCb = null, baseState = "";
 
   function plantRow(p) {
     p = p || {};
@@ -447,7 +447,7 @@
       App.announce("Plant moved to the top. It is now the main plant.");
     });
     rm.addEventListener("click", function () {
-      var list = $("plantList"), next = row.nextElementSibling || row.previousElementSibling;
+      var next = row.nextElementSibling || row.previousElementSibling;
       row.remove();
       renumber();
       if (next) { var f = next.querySelector(".pl-name"); if (f) f.focus(); } else $("addPlant").focus();

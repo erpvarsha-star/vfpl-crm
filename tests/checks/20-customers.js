@@ -24,7 +24,7 @@ module.exports = async (t) => {
   const logs = id => page.evaluate(i => Store.listLog(i), id);
   const dlgOpen = sel => page.evaluate(s => document.querySelector(s).open, sel);
   const closed = sel => page.waitForFunction(s => !document.querySelector(s).open, sel);
-  const text = async loc => (await loc.innerText()).trim();
+  const text = async loc => ((await loc.textContent()) || '').trim();   // textContent: CSS text-transform must not change what we compare
 
   await t.open(page);
   await t.tab(page, 'list');
@@ -455,10 +455,11 @@ module.exports = async (t) => {
   const m = await t.fresh();
   const mp = m.page;
   const mrow = n => t.row(mp, n);
-  const mreload = async () => { await t.reload(mp); await mp.waitForSelector('#rows tr'); };
+  // the stand-ins live in the page, so they are installed again after a refresh (a real module needs no help)
+  const mreload = async () => { await t.reload(mp); await mp.waitForSelector('#rows tr'); await stub(mp); };
   await t.open(mp);
   await t.tab(mp, 'list');
-  const stubbed = await mp.evaluate(() => {
+  const stubFn = () => {
     const out = [];
     if (!window.CrmMoney) {
       out.push('money');
@@ -501,7 +502,9 @@ module.exports = async (t) => {
     }
     App.show('list');
     return out;
-  });
+  };
+  const stub = pg => pg.evaluate(stubFn);
+  const stubbed = await stub(mp);
   const SANG = ['sangkaj-auto-components-private-limited', 'sangkaj-industries-pvt-ltd'];
   const moneyDoc = {
     v: 1,
@@ -518,8 +521,8 @@ module.exports = async (t) => {
   await mp.evaluate(async d => { await Store.doc('money').set(d); App.flush(); }, moneyDoc);
   check('money column appears only after a money import',
     colBefore.td === 0 && colBefore.th && colBefore.imp && (await mp.locator('td.money').count()) === 42 && await mp.locator('#thMoney').isVisible() && await mp.locator('#moneyImportBtn2').isHidden() &&
-    (await mp.locator('#thMoney button[data-sort="overdue"]').innerText()) === 'Outstanding / overdue',
-    JSON.stringify([colBefore, stubbed, await mp.locator('td.money').count(), await mp.locator('#thMoney').isVisible(), await mp.locator('#moneyImportBtn2').isHidden(), await mp.locator('#thMoney button[data-sort="overdue"]').innerText()]));
+    (await text(mp.locator('#thMoney button[data-sort="overdue"]'))) === 'Outstanding / overdue',
+    JSON.stringify([colBefore, stubbed, await mp.locator('td.money').count(), await mp.locator('#thMoney').isVisible(), await mp.locator('#moneyImportBtn2').isHidden(), await text(mp.locator('#thMoney button[data-sort="overdue"]'))]));
   const zfMoney = mrow('ZF STEERING').locator('td.money');
   const over = zfMoney.locator('.amt-over');
   check('overdue amount is red and says Overdue',
@@ -556,7 +559,7 @@ module.exports = async (t) => {
   await mp.evaluate(async d => { await Store.doc('revenue').set(d); App.flush(); }, revDoc);
   check('FY revenue line appears after an invoice import',
     noRev === 0 && (await text(mrow('ZF STEERING').locator('.amt-rev'))) === 'FY revenue ₹15,00,000' && (await text(mrow('NEEL METAL').locator('.amt-rev'))) === 'FY revenue ₹20,00,000' &&
-    await mp.locator('#thMoney button[data-sort="revenue"]').isVisible() && (await mp.locator('#thMoney button[data-sort="revenue"]').innerText()) === 'FY revenue');
+    await mp.locator('#thMoney button[data-sort="revenue"]').isVisible() && (await text(mp.locator('#thMoney button[data-sort="revenue"]'))) === 'FY revenue');
   await mp.click('th button[data-sort="revenue"]');
   const rorder = await mp.locator('#rows tr td.name .nm').allInnerTexts();
   check('sort by revenue puts the largest first', rorder[0].startsWith('NEEL METAL') && rorder[1].startsWith('ZF STEERING'), rorder.slice(0, 2).join(' | '));
@@ -592,7 +595,7 @@ module.exports = async (t) => {
 
   // ===================== layout =====================
   // desktop: the table fits its card with every line and button showing
-  for (const w of [1280, 900]) {
+  for (const w of [1280, 1180, 1179, 900]) {
     const d = await t.fresh({ viewport: { width: w, height: 900 } });
     await t.open(d.page);
     await t.tab(d.page, 'list');
