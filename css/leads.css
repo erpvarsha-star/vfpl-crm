@@ -4,6 +4,12 @@
 .bar select { width: auto; max-width: 100%; font-size: .9rem; padding: 8px 10px; }
 .btn.primary:focus-visible, .btn:focus-visible { outline: 3px solid var(--orange); outline-offset: 3px; }
 .lstage { align-items: center; }
+.lfilter { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin: 0 0 12px; padding: 8px 12px; border-radius: 10px; background: #e6edf8; color: var(--navy); font-size: .9rem; font-weight: 600; }
+.lfilter span { flex: 1 1 200px; min-width: 0; overflow-wrap: anywhere; }
+.lfilter .btn-sm:focus-visible, .lmore .btn:focus-visible, #leadEmptyClear:focus-visible { outline: 3px solid var(--orange); outline-offset: 2px; }
+.lmore { display: flex; justify-content: center; margin-top: 14px; }
+#leadEmpty p { margin-bottom: 12px; overflow-wrap: anywhere; }
+#leadNote { margin-bottom: 12px; }
 .lstage .btn { padding: 8px 14px; font-size: .85rem; }
 
 /* ---------- table ---------- */

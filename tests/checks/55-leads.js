@@ -351,7 +351,7 @@ module.exports = async (t) => {
   await ip.click('#mergeOk');
   await ip.waitForFunction(() => !document.getElementById('leadMergeDlg').open);
   await until(ip, () => document.getElementById('leadStaging').hidden);
-  const doneNotice = await ip.locator('#notice').innerText();
+  const doneNotice = await ip.locator('#leadNote').innerText();
   await reload(ip);
   const made = await leadsIn(ip);
   const acme = made.find(l => l.company_key === 'acmeforge');
@@ -419,7 +419,7 @@ module.exports = async (t) => {
   if (!real) {
     await leadRow(cv, 'Convert Test').locator('.l-conv summary').click();
     await leadRow(cv, 'Convert Test').locator('.l-cust').click();
-    check('convert to customer without a prefill-capable Add form shows a notice and no blank form', /Customers update that accepts a prefilled Add form/.test(await cv.locator('#notice').innerText()) && !(await cv.evaluate(() => { const d = document.getElementById('dlg'); return d && d.open; })) &&
+    check('convert to customer without a prefill-capable Add form shows a notice and no blank form', /Customers update that accepts a prefilled Add form/.test(await cv.locator('#leadNote').innerText()) && !(await cv.evaluate(() => { const d = document.getElementById('dlg'); return d && d.open; })) &&
       (await leadsIn(cv))[0].status === 'Open');
     skip('convert to customer through the real Add dialog marks the lead Converted', 'needs A2');
   } else {
@@ -493,10 +493,10 @@ module.exports = async (t) => {
   await rq.evaluate(() => { delete window.CrmRfq; delete window.CrmCustomers.openAdd; });
   await leadRow(rq, 'Rfq Test').locator('.l-conv summary').click();
   await leadRow(rq, 'Rfq Test').locator('.l-rfq').click();
-  const n1 = await rq.locator('#notice').innerText();
+  const n1 = await rq.locator('#leadNote').innerText();
   await leadRow(rq, 'Rfq Test').locator('.l-conv summary').click();
   await leadRow(rq, 'Rfq Test').locator('.l-cust').click();
-  const n2 = await rq.locator('#notice').innerText();
+  const n2 = await rq.locator('#leadNote').innerText();
   check('convert without the RFQs or Customers module shows a clear notice', /Convert to RFQ is not available/.test(n1) && /Convert to customer is not available/.test(n2));
 
   /* ---------------- privacy ---------------- */
@@ -555,4 +555,56 @@ module.exports = async (t) => {
   const wide = await open({ viewport: { width: 1280, height: 900 } });
   await seed(wide, [{ company: 'Wide Test Co', scope: 'Hubs', contact_name: 'Wes Test', email: 'w@example.invalid', next_follow_up: T(-2), last_contact: T(-30), bucket: 'A', action_category: 'No Response (Awaiting Data)', segment_domain: 'Truck', region_program: 'Pune' }]);
   check('no sideways scroll on the Leads tab at 1280px', (await wide.evaluate(() => document.documentElement.scrollWidth)) === 1280);
+
+  /* ---------------- polish: filter bar and way out of an empty list, tab-scoped messages, paging ---------------- */
+  const pg = await open();
+  const many = [];
+  for (let i = 1; i <= 61; i++) many.push({ company: 'Paged Co ' + String(i).padStart(2, '0'), bucket: i % 3 === 0 ? 'A' : i % 3 === 1 ? 'B' : 'C', last_contact: T(-(i % 40)), next_follow_up: i === 7 ? T(-2) : '' });
+  await seed(pg, many);
+  const foot = () => pg.locator('#leadFoot').innerText();
+  check('long lists show 25 at first, with a "Show 25 more" control and true counts', (await nRows(pg)) === 25 && (await pg.locator('#leadMore').innerText()) === 'Show 25 more (36 not shown)' && (await foot()) === 'Showing 25 of 61 leads.' &&
+    (await pg.locator('#lb-all').innerText()) === '61' && (await pg.evaluate(() => CrmLeads.visible().length)) === 61, await foot());
+  await pg.click('#leadMore');
+  check('Show more adds the next 25 and keeps the counts right', (await nRows(pg)) === 50 && (await pg.locator('#leadMore').innerText()) === 'Show 11 more (11 not shown)' && (await foot()) === 'Showing 50 of 61 leads.');
+  await reload(pg);
+  check('how many leads are shown survives a refresh', (await nRows(pg)) === 50 && await pg.locator('#leadMoreWrap').isVisible());
+  await pg.click('#leadMore');
+  check('the last page hides the control', (await nRows(pg)) === 61 && await pg.locator('#leadMoreWrap').isHidden() && (await foot()) === 'Showing 61 of 61 leads.');
+  await pg.click('.chip[data-b="B"]');
+  check('changing a filter starts again at 25, and the footer counts the matches', (await nRows(pg)) === 21 && (await foot()) === 'Showing 21 of 21 leads that match the filters (61 in total).' && await pg.locator('#leadMoreWrap').isHidden());
+  await pg.click('.chip[data-b=""]');
+  check('clearing the bucket chip shows the first 25 again', (await nRows(pg)) === 25);
+  await pg.evaluate(() => App.show('leads', {}));
+  check('a Dashboard link (App.show) starts at 25 as well', (await nRows(pg)) === 25 && await pg.locator('#leadFilterBar').isHidden());
+
+  check('no filter bar when nothing is filtered', await pg.locator('#leadFilterBar').isHidden() && await pg.locator('#leadEmptyClear').isHidden());
+  await pg.evaluate(() => App.show('leads', { bucket: 'jv', fit: 'regret', q: 'paged' }));
+  const bar = await pg.locator('#leadFilterBar').innerText();
+  check('an active filter shows a one-line "Filtered:" bar in plain words with Clear filters', /^Filtered: bucket JV · fit Fast regret · search "paged"/.test(bar) && /Clear filters/.test(bar), bar);
+  check('a filter that matches nothing says why and offers Clear filters in the empty state', (await nRows(pg)) === 0 && /No leads match these filters: bucket JV, fit Fast regret, search "paged"\./.test(await pg.locator('#leadEmpty').innerText()) && await pg.locator('#leadEmptyClear').isVisible());
+  await pg.click('#leadEmptyClear');
+  check('Clear filters in the empty state returns to all open leads', (await nRows(pg)) === 25 && await pg.locator('#leadFilterBar').isHidden() && (await pg.inputValue('#leadQ')) === '' &&
+    (await pg.getAttribute('.chip[data-b=""]', 'aria-pressed')) === 'true' && (await pg.evaluate(() => document.activeElement.dataset.b)) === '');
+  await pg.evaluate(() => App.show('leads', { flag: 'overdue', category: 'Action Pending (Urgent)', showClosed: true }));
+  await reload(pg);
+  check('the Filtered bar survives a refresh', await pg.locator('#leadFilterBar').isVisible() && /Filtered: action category Action Pending \(Urgent\) · follow-up overdue · including converted and closed leads/.test(await pg.locator('#leadFilterText').innerText()) && (await nRows(pg)) === 0);
+  await pg.focus('#leadClear');
+  await pg.keyboard.press('Enter');
+  check('Clear filters works from the keyboard and resets bucket, category, fit, flag, search and show closed', (await nRows(pg)) === 25 && await pg.locator('#leadFilterBar').isHidden() && (await pg.inputValue('#leadCategory')) === '' && (await pg.getAttribute('#leadClosedToggle', 'aria-pressed')) === 'false' &&
+    (await pg.getAttribute('.chip[data-flag="overdue"]', 'aria-pressed')) === 'false');
+  await reload(pg);
+  check('cleared filters stay cleared after a refresh', await pg.locator('#leadFilterBar').isHidden() && (await nRows(pg)) === 25 && (await pg.getAttribute('.chip[data-b=""]', 'aria-pressed')) === 'true');
+  await pg.fill('#leadQ', 'zzzz');
+  check('typing a search shows the Filtered bar too', /search "zzzz"/.test(await pg.locator('#leadFilterBar').innerText()));
+  await pg.fill('#leadQ', '');
+
+  await pg.evaluate(() => { delete window.CrmRfq; });
+  await pg.locator('#leadRows tr').first().locator('.l-conv summary').click();
+  await pg.locator('#leadRows tr').first().locator('.l-rfq').click();
+  const inTab = await pg.locator('#leadNote').isVisible() && /not available/.test(await pg.locator('#leadNote').innerText());
+  await t.tab(pg, 'list');
+  const onList = await pg.locator('#leadNote').isHidden() && await pg.locator('#notice').isHidden();
+  await t.tab(pg, 'leads');
+  await pg.click('#leadNoteX');
+  check('a message from the Leads tab shows on that tab only and can be dismissed', inTab && onList && await pg.locator('#leadNote').isHidden());
 };
