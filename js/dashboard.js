@@ -305,7 +305,8 @@
       AGE.forEach(function (a, i) {
         var x = b[a[0]] || { amount: 0, n: 0 };
         var kids = [el("span", { class: "sw seg-" + (i + 1), "aria-hidden": "true" }), a[1] + " · ", amount(x.amount), " · " + plural(x.n || 0, "customer", "customers")];
-        if (a[0] === "b90" && x.preApril) kids.push(el("small", { class: "d-dim" }, [" (of which before April ", amount(x.preApril), ")"]));
+        var pre = x.preApril != null ? x.preApril : s.preApril;
+        if (a[0] === "b90" && pre) kids.push(el("small", { class: "d-dim" }, [" (of which before April ", amount(pre), ")"]));
         legend.appendChild(jump("list", { extra: { kind: "aging", value: a[0] } }, x.n || 0, { class: "d-lg", dataset: { age: a[0] } }, kids));
       });
       sec.appendChild(legend);
@@ -479,7 +480,7 @@
     var h = s.hints || {}, hints = [];
     if (s.total >= 3) {
       if (h.quotedToPoPct != null) {
-        var denom = h.quotedEver != null ? h.quotedEver : stages.slice(1).reduce(function (a, k) { return a + ((s.byStage && s.byStage[k]) || 0); }, 0);
+        var denom = h.quotedEver != null ? h.quotedEver : s.quotedEver != null ? s.quotedEver : stages.slice(1).reduce(function (a, k) { return a + ((s.byStage && s.byStage[k]) || 0); }, 0);
         hints.push(el("li", null, [el("span", { class: "d-static", text: Math.round(h.quotedToPoPct) + "%" }), " of ",
           jump("rfqs", { flag: "quotedEver", view: "table" }, null, { class: "d-link", dataset: { hint: "quotedEver" } }, plural(denom, "quoted RFQ", "quoted RFQs")), " reached PO"]));
       }
@@ -572,7 +573,7 @@
       t.push(tile("lead-" + k, k === "dormant" ? "Bucket: Dormant" : k === "jv" ? "Bucket: JV" : "Bucket " + k, num(n), names[k] || "", "", "leads", { bucket: k }, n));
     });
     if (bk.none) t.push(tile("lead-none", "Bucket not set", num(bk.none), "", "", "leads", { bucket: "none" }, bk.none));
-    t.push(tile("lead-dormant", "Dormant > 6 months", num(s.dormant || 0), "", "", "leads", { flag: "dormant" }, s.dormant || 0));
+    t.push(tile("lead-dormant6", "Dormant > 6 months", num(s.dormant || 0), "", "", "leads", { flag: "dormant" }, s.dormant || 0));
     t.push(tile("lead-overdue", "Lead follow-ups overdue", num(s.followOverdue || 0), s.followOverdue ? "Overdue" : "None overdue", s.followOverdue ? "risk" : "", "leads", { flag: "overdue" }, s.followOverdue || 0));
     t.push(tile("lead-touched", "Touched in last 7 days", num(s.touched7 || 0), "", "", "leads", { flag: "touched7" }, s.touched7 || 0));
     sec.appendChild(tiles(t));
@@ -772,7 +773,7 @@
       el("p", { class: "d-asof", id: "dashAsOf", text: "As of " + longDate(today) + " (India time)" }),
       el("div", { class: "d-tools no-print" }, [
         el("button", { type: "button", class: "chip", id: "hideAmt", "aria-pressed": String(on), text: "Hide amounts", onclick: function () { App.setHideAmounts(!App.hideAmounts()); } }),
-        modFn("CrmReport", "open") ? el("button", { type: "button", class: "btn", id: "weeklyReportBtn", text: "Weekly sales review", onclick: call("CrmReport", "open") }) : null,
+        modFn("CrmReport", "open") ? el("button", { type: "button", class: "btn", id: "weeklyReportBtn", text: "Weekly sales review" }) : null,   // CrmReport owns the click handler
         el("button", { type: "button", class: "btn", id: "printBtn", text: "Print / Save as PDF", onclick: function () { App.show("dash"); window.print(); } })
       ])
     ]);
