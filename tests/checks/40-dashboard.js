@@ -33,7 +33,8 @@ function installFakes(cfg) {
         unmatched: { n: 2, amount: 123456 }
       };
     },
-    openImport: () => bump('__moneyImport')
+    openImport: () => bump('__moneyImport'),
+    openUnmatched: () => bump('__moneyUnmatched')
   });
 
   const stages = ['Received', 'Quoted', 'Negotiated', 'Finalised', 'PO', 'Sample', 'PPAP'];
@@ -425,7 +426,9 @@ module.exports = async (t) => {
   check('money footer names the data dates and the unmatched amount', /Data as of \d{1,2} \w{3} 20\d\d \(AGING\), \d{1,2} \w{3} 20\d\d \(LIVE_POSITION\)/.test(mfoot) && /Includes ₹1\.23 L for 2 names not in the CRM/.test(mfoot) && (await f.locator('#moneyImportBtn').count()) === 1);
   await f.evaluate(() => { window.__moneyImport = 0; });
   await f.click('#moneyUnmatched');
-  check('the unmatched button and Import money data start the import', (await f.evaluate(() => window.__moneyImport)) === 1);
+  check('the unmatched button opens the unmatched-names dialog, Import money data starts the import', (await f.evaluate(() => window.__moneyUnmatched)) === 1 && (await f.evaluate(() => window.__moneyImport)) === 0);
+  await f.click('#moneyImportBtn');
+  check('the Import money data button starts the import', (await f.evaluate(() => window.__moneyImport)) === 1);
   check('no stale warning when the data is recent', !/days old/.test(await f.locator('#dash-money').innerText()));
   const st3 = await open(mkCfg('full', { stale: true }));
   const staleEl = st3.locator('#dash-money .d-warn');
@@ -601,6 +604,102 @@ module.exports = async (t) => {
   await ph.emulateMedia({ media: 'screen' });
   await ph.click('#toExport'); await t.tab(ph, 'dash');
   check('focus stays on the toggle after it re-renders the card', await (async () => { await ph.focus('#fromData'); await ph.click('#fromData'); return (await ph.evaluate(() => document.activeElement && document.activeElement.id)) === 'fromData'; })());
+
+  // =========================================================================================================
+  // End to end with the REAL modules (no fakes): import AGING, LIVE_POSITION and an invoice file with synthetic
+  // amounts through the real importer, then check the Dashboard against the Customers rows it opens.
+  // =========================================================================================================
+  const MONTH = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  const asOn = iso => { const [y, m, d] = iso.split('-'); return d + '-' + MONTH[+m - 1] + '-' + y.slice(2); };
+  const NAME = n => data.customers.find(c => c.name.toUpperCase().startsWith(n)).name;
+  const ZFn = NAME('ZF STEERING'), NRn = NAME('NR INDUSTRIES'), NEELn = NAME('NEEL METAL'), MKn = NAME('VARSHA FORGINGS');
+  const AG_HEAD = 'Customer,Printed Terms Days,ERP Total,ERP Not Due,ERP Overdue,Model Not Due,1-30,31-60,61-90,>90,Pre April,Credit Balance,Model Overdue,As On';
+  const asOnDate = asOn(istToday(-2));
+  const agingCsv = [AG_HEAD,
+    `${ZFn},45,"1,500,000","500,000","1,000,000","450,000","100,000","200,000","300,000","250,000","150,000",0,"1,000,000",${asOnDate}`,
+    `${NRn},,"500,000",0,"400,000",0,0,0,"400,000",0,0,0,"400,000",${asOnDate}`,
+    `${NEELn},,"60,000",0,"50,000",0,"50,000",0,0,0,0,0,"50,000",${asOnDate}`,
+    `Zeta Imaginary Pvt Ltd,,"10,000",0,"10,000",0,"10,000",0,0,0,0,0,"10,000",${asOnDate}`].join('\n') + '\n';
+  const liveCsv = ['Customer,ERP 15-Oct,Invoices Since,Receipts Since,Estimated Live,As On',
+    `${ZFn},"2,000,000","300,000","100,000","2,200,000",${asOnDate}`, `${NRn},"900,000",0,0,"900,000",${asOnDate}`,
+    `${NEELn},"250,000",0,0,"250,000",${asOnDate}`, `Zeta Imaginary Pvt Ltd,"20,000",0,0,"20,000",${asOnDate}`].join('\n') + '\n';
+  const INV_HEAD = 'Invoice No,Invoice Date,Customer On Invoice,Customer,ERP Group,PO No,Terms Days,Taxable,Invoice Amount,Due Date,GSTIN,CGST,SGST,IGST,TCS';
+  const invLine = (no, date, c, tx) => [no, date, c, c, '', 'PO-1', '30', tx, '1', '30-Sep-26', '27ABCDE1234F1Z5', '9', '9', '0', '1'].map(x => /,/.test(x) ? '"' + x + '"' : x).join(',');
+  const invCsv = [INV_HEAD, invLine('E1', '01-Apr-26', ZFn, '100,000'), invLine('E2', '05-May-26', ZFn, '200,000'), invLine('E3', '20-Apr-26', NRn, '50,000'), invLine('E4', '15-May-26', NEELn, '30,000'), invLine('E5', '20-Jun-26', MKn, '450,000')].join('\n') + '\n';
+
+  const real = async (viewport) => {
+    const { page: rp } = await t.fresh({ viewport });
+    await t.open(rp);
+    await rp.waitForSelector('#panel-dash .tiles');
+    return rp;
+  };
+  const importVia = async (rp, btn, name, text, wait) => {
+    await rp.click(btn);
+    await rp.setInputFiles('#importFile', t.csvFile(name, text));
+    await rp.waitForSelector('#importSummary li, #importErr:not([hidden])');
+    await rp.click('#importOk');
+    await rp.waitForFunction(() => !document.getElementById('importDlg').open);
+    await flush(rp);
+    if (wait) await rp.waitForSelector(wait);
+  };
+  const doImports = async (rp) => {
+    await importVia(rp, '#moneyImportBtn', 'aging.csv', agingCsv);
+    await importVia(rp, '#moneyImportBtn', 'live.csv', liveCsv);
+    await importVia(rp, '#revImportBtn', 'INVOICE_REGISTER.csv', invCsv, '#dashRevenue #revCard[data-state="data"]');
+  };
+  const r = await real();
+  check('the real Money and Revenue modules are present for the end-to-end checks', await t.has(r, 'window.CrmMoney && CrmMoney.openUnmatched && window.CrmRevenue && CrmRevenue.renderCard'));
+  check('before any import the real Money card shows its empty state on the Dashboard', /No money data yet/.test(await r.locator('#dash-money').innerText()) && (await r.locator('#dashRevenue #revImportBtn').count()) === 1);
+  await doImports(r);
+  await seed(r, async (m) => { for (const id of Object.keys(m)) await Store.setFollowUp(id, m[id]); }, { [NR]: at(-3), [ZF]: at(-9) });
+
+  const rs = await r.evaluate(() => CrmMoney.stats());
+  check('real money import: tiles show the stats and the totals are the sums of the fixture', rs.outstanding === 3370000 && rs.overdue === 1460000 &&
+    (await r.locator('[data-tile="outstanding"] .d-num').innerText()) === '₹33.70 L' && (await r.locator('[data-tile="overdue-amt"] .d-num').innerText()) === '₹14.60 L' &&
+    (await r.locator('[data-tile="overdue-amt"]').evaluate(e => getComputedStyle(e).borderTopColor)) === RED, JSON.stringify({ o: rs.outstanding, v: rs.overdue }));
+  const withOver = await r.evaluate(() => Store.customers().filter(c => { const m = CrmMoney.forCustomer(c.id); return m && m.overdue > 0; }).length);
+  const withOut = await r.evaluate(() => Store.customers().filter(c => { const m = CrmMoney.forCustomer(c.id); return m && m.outstanding > 0; }).length);
+  const mrows = [];
+  for (const k of ['outstanding', 'overdue-amt', 'overdue-pct']) mrows.push(await rowsAfter(r, r.locator(`[data-tile="${k}"]`)));
+  check('real money tiles open the Customers rows with that amount', eq(mrows, [withOut, withOver, withOver]) && withOver === 3 && withOut === 3, JSON.stringify({ mrows, withOver, withOut }));
+  const lgE = await r.locator('.d-lg[data-age]').evaluateAll(l => l.map(e => ({ k: e.dataset.age, n: Number(e.dataset.n) })));
+  const lgRowsE = [];
+  for (const l of lgE) lgRowsE.push(await rowsAfter(r, r.locator(`.d-lg[data-age="${l.k}"]`)));
+  check('real aging legend counts equal the customers each bucket opens', eq(lgRowsE, lgE.map(l => l.n)) && lgE.length === 4, JSON.stringify({ lgE, lgRowsE }));
+  const topR = await r.locator('.d-top5 .d-row').evaluateAll(l => l.map(e => e.dataset.top));
+  const topRows = await rowsAfter(r, r.locator('#top5All'));
+  check('real top 5 overdue is sorted and "Show these" opens exactly those customers', eq(topR, [ZF, NR, idOf('NEEL METAL')]) && topRows === topR.length, JSON.stringify({ topR, topRows }));
+  const unmTxt = (await r.locator('#moneyUnmatched').innerText()).replace(/\s+/g, ' ');
+  await r.click('#moneyUnmatched');
+  check('the unmatched button opens the real unmatched-names dialog with the unmatched name', /Includes ₹10,000 for 1 name/.test(unmTxt) && await r.locator('#mnyUnmDlg').evaluate(d => d.open) &&
+    (await r.locator('#mnyUnmDlg .mny-unmname').allInnerTexts()).includes('Zeta Imaginary Pvt Ltd') && !(await r.locator('#importDlg').evaluate(d => d.open)), unmTxt);
+  await r.click('#mnyUnmClose');
+  check('Attention shows the real overdue amount in red', /₹4\.00 L overdue/.test(await r.locator(`#attList [data-id="${NR}"] .d-risk`).innerText()));
+
+  // revenue card inside the slot
+  const revBox = await r.evaluate(() => { const s = document.getElementById('dashRevenue'); const b = s.getBoundingClientRect(); return { n: s.querySelectorAll('#revCard').length, inc: document.querySelectorAll('#incRelated').length, bar: !!document.getElementById('dashRelBar'), right: b.right, page: document.documentElement.scrollWidth, inner: window.innerWidth }; });
+  check('the real revenue card renders inside #dashRevenue with its own related-parties switch and no layout break at 1280px', revBox.n === 1 && revBox.inc === 1 && !revBox.bar && revBox.right <= revBox.inner && revBox.page <= revBox.inner, JSON.stringify(revBox));
+  await seed(r, async (a) => { await Store.saveCustomer(a.zf, { segment: 'OEM' }); await Store.saveCustomer(a.mk, { segment: 'OEM' }); }, { zf: ZF, mk: MARKAL });
+  const segOff = (await r.locator('.hbar.segment[data-bar="OEM"]').innerText()).replace(/\s+/g, ' ');
+  await r.click('#incRelated'); await flush(r);
+  const segOn = (await r.locator('.hbar.segment[data-bar="OEM"]').innerText()).replace(/\s+/g, ' ');
+  check('the real switch changes the segment revenue on the Dashboard (related parties out by default, then in)', /revenue ₹3\.00 L/.test(segOff) && /revenue ₹7\.50 L/.test(segOn), JSON.stringify({ segOff, segOn }));
+  await t.reload(r); await r.waitForSelector('#panel-dash .tiles');
+  check('and the choice survives a refresh', (await r.getAttribute('#incRelated', 'aria-pressed')) === 'true' && /revenue ₹7\.50 L/.test((await r.locator('.hbar.segment[data-bar="OEM"]').innerText()).replace(/\s+/g, ' ')));
+  const claimedE = await r.locator('#panel-dash button[data-go="list"][data-n]').evaluateAll(l => l.map(e => Number(e.dataset.n)));
+  const rowsE = [];
+  for (let i = 0; i < claimedE.length; i++) rowsE.push(await rowsAfter(r, r.locator('#panel-dash button[data-go="list"][data-n]').nth(i)));
+  check('with real imported data every Dashboard number that opens Customers shows exactly that many rows', claimedE.length > 40 && eq(claimedE, rowsE), JSON.stringify(claimedE.map((c, i) => [c, rowsE[i]]).filter(x => x[0] !== x[1])));
+  await r.evaluate(() => App.setHideAmounts(true)); await flush(r);
+  const hiddenE = await r.locator('#panel-dash').innerText();
+  check('Hide amounts masks the real money and revenue cards on the Dashboard', !/₹\s?\d/.test(hiddenE) && hiddenE.includes('₹ •••'), (hiddenE.match(/.{0,25}₹\s?\d.{0,20}/) || [''])[0]);
+
+  const rp = await real({ width: 375, height: 760 });
+  await doImports(rp);
+  const ph375 = await rp.evaluate(() => ({ page: document.documentElement.scrollWidth, wide: [...document.querySelectorAll('#panel-dash *')].filter(e => e.getBoundingClientRect().right > 376 && getComputedStyle(e).position !== 'fixed' && e.getClientRects().length > 0).map(e => e.className || e.tagName).slice(0, 5) }));
+  check('with real money and revenue data there is no sideways scroll on the Dashboard at 375px', ph375.page === 375 && ph375.wide.length === 0, JSON.stringify(ph375));
+  await rp.click('#moneyUnmatched');
+  check('the unmatched dialog fits at 375px from the Dashboard', await rp.evaluate(() => { const d = document.getElementById('mnyUnmDlg').getBoundingClientRect(); return document.documentElement.scrollWidth <= 375 && d.left >= 0 && d.right <= 375; }));
 };
 
 
