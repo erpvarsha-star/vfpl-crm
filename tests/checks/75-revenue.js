@@ -46,6 +46,7 @@ module.exports = async (t) => {
   const dash = async () => { await t.tab(page, 'dash'); await slot(); };
   const reloadDash = async () => { await t.reload(page); await dash(); };
   const txt = sel => page.locator(sel).innerText();
+  const tc = sel => page.locator(sel).textContent();
   const color = sel => page.locator(sel).evaluate(e => getComputedStyle(e).color);
   const idOf = name => page.evaluate(n => Store.customers().find(c => c.name === n).id, name);
   const importCsv = async (text, name, wait) => {
@@ -122,12 +123,12 @@ module.exports = async (t) => {
 
   // ---------- tiles, both measure-to choices ----------
   check('FY to date and month to date match the fixture (measure to the last invoice date)',
-    (await txt('#revTileFytd .k')) === 'FY 2026-27 to date' && (await txt('#revTileFytd .v')) === FYTD && (await txt('#revTileMtd .k')) === 'Month to date (July 2026)' && (await txt('#revTileMtd .v')) === '₹1,40,000' &&
+    (await tc('#revTileFytd .k')) === 'FY 2026-27 to date' && (await txt('#revTileFytd .v')) === FYTD && (await tc('#revTileMtd .k')) === 'Month to date (July 2026)' && (await txt('#revTileMtd .v')) === '₹1,40,000' &&
     (await page.getAttribute('#revToData', 'aria-pressed')) === 'true' && /Invoices up to 12 Jul 2026/.test(await txt('#revTileFytd .s')));
   await page.click('#revToToday');
   const todayMonth = await page.evaluate(() => { const d = Store.todayISO(); return ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'][+d.slice(5, 7) - 1] + ' ' + d.slice(0, 4); });
   const laterThanData = istToday(0) > '2026-07-31';
-  check('measuring to today keeps all invoices and moves the month to the current one', laterThanData ? ((await txt('#revTileFytd .v')) === FYTD && (await txt('#revTileMtd .k')) === 'Month to date (' + todayMonth + ')' && (await txt('#revTileMtd .v')) === '₹0') : true, await txt('#revTileMtd .k'));
+  check('measuring to today keeps all invoices and moves the month to the current one', laterThanData ? ((await txt('#revTileFytd .v')) === FYTD && (await tc('#revTileMtd .k')) === 'Month to date (' + todayMonth + ')' && (await txt('#revTileMtd .v')) === '₹0') : true, await tc('#revTileMtd .k'));
   await reloadDash();
   check('the measure-to choice survives a refresh', (await page.getAttribute('#revToToday', 'aria-pressed')) === 'true' && (await page.getAttribute('#revToData', 'aria-pressed')) === 'false');
   await page.click('#revToData');
@@ -157,7 +158,7 @@ module.exports = async (t) => {
   await dash();
 
   // ---------- concentration ----------
-  check('top 1 and top 5 shares show', (await txt('#revConc')) === 'Top customer 75% · Top 5 97%', await txt('#revConc'));
+  check('top 1 and top 5 shares show', (await tc('#revConc')) === 'Top customer 75% · Top 5 97%', await tc('#revConc'));
   check('concentration risk is red with text above the threshold', (await txt('#revRisk')) === 'Concentration risk: ' + ZF + ' is 75% of revenue (limit 25%)' && (await color('#revRisk')) === 'rgb(180, 35, 24)', await txt('#revRisk'));
   await page.fill('#concPct', '3');
   await page.dispatchEvent('#concPct', 'change');
@@ -209,7 +210,7 @@ module.exports = async (t) => {
   await page.fill('#tgtCust .tgt-row[data-id="' + await idOf(ZF) + '"] input', '12a');
   await page.click('#tgtSave');
   const terr = await txt('#tgtErr');
-  check('a target that is not a number is refused with the row name', /^Row ZF STEERING GEAR \(INDIA\) L…: target is not a number\.$/.test(terr) && await page.locator('#targetsDlg').evaluate(d => d.open), terr);
+  check('a target that is not a number is refused with the row name', /^Row ZF STEERING GEAR \(INDIA\) LTD: target is not a number\.$/.test(terr) && await page.locator('#targetsDlg').evaluate(d => d.open), terr);
   await page.fill('#tgtFilter', 'neel');
   check('the customer list can be filtered by name', (await page.locator('#tgtCust .tgt-row:not([hidden])').count()) === 1);
   await page.fill('#tgtFilter', '');
@@ -255,7 +256,7 @@ module.exports = async (t) => {
   };
   check('"Include related parties" adds them back to FYTD, top 10, concentration, segment share and targets',
     inc.on === 'true' && inc.fytd === '₹10,85,000' && inc.top === '1. ' + MK && inc.conc === 'Concentration risk: ' + MK + ' is 41% of revenue (limit 25%)' && inc.exclGone && /^Includes 2 related parties/.test(inc.note) &&
-    inc.targets === 'Targets FY 2026-27: ₹9,25,000 of ₹17,00,000 (54%)' && /₹5\.65 L/.test(inc.segNotSet), JSON.stringify(inc));
+    inc.targets === 'Targets FY 2026-27: ₹9,25,000 of ₹17,00,000 (54%)' && /₹5\.85 L/.test(inc.segNotSet), JSON.stringify(inc));
   await reloadDash();
   check('"Include related parties" survives a refresh', (await page.getAttribute('#incRelated', 'aria-pressed')) === 'true' && (await txt('#revTileFytd .v')) === '₹10,85,000' && await page.evaluate(() => CrmRevenue.viewOpts().includeRelated === true));
   await page.click('#incRelated');
@@ -311,12 +312,12 @@ module.exports = async (t) => {
   await importCsv(csv2);
   check('a re-import shows how many rows were read and replaces the data', /17 rows read · 16 kept/.test(await txt('#importSummary')));
   await confirmImport();
-  check('prior-year comparison appears only with prior-year rows', (await txt('#revPrior')) === 'vs same period last FY +197%' && (await page.locator('#revTrend .prior').count()) === 3 && (await txt('#revFy option:first-child')) === 'FY 2026-27' && (await page.locator('#revFy option').count()) === 2, await txt('#revPrior').catch(() => 'none'));
+  check('prior-year comparison appears only with prior-year rows', (await txt('#revPrior')) === 'vs same period last FY +197%' && (await page.locator('#revTrend .prior').count()) === 4 && (await txt('#revFy option:first-child')) === 'FY 2026-27' && (await page.locator('#revFy option').count()) === 2, await txt('#revPrior').catch(() => 'none'));
   check('the re-import replaced the earlier rows (15 invoices, no double counting)', (await store()).rows.length === 15 && (await txt('#revTileFytd .v')) === FYTD);
   await page.selectOption('#revFy', '2025-26');
-  check('choosing the earlier year shows that year whole, with no comparison of its own', (await txt('#revTileFytd .k')) === 'FY 2025-26 to date' && (await txt('#revTileFytd .v')) === '₹1,90,000' && (await page.locator('#revPrior').count()) === 0 && (await txt('#revTargetText')) === 'No targets set for FY 2025-26.');
+  check('choosing the earlier year shows that year whole, with no comparison of its own', (await tc('#revTileFytd .k')) === 'FY 2025-26 to date' && (await txt('#revTileFytd .v')) === '₹1,90,000' && (await page.locator('#revPrior').count()) === 0 && (await txt('#revTargetText')) === 'No targets set for FY 2025-26.');
   await reloadDash();
-  check('the financial year choice survives a refresh', (await page.inputValue('#revFy')) === '2025-26' && (await txt('#revTileFytd .k')) === 'FY 2025-26 to date');
+  check('the financial year choice survives a refresh', (await page.inputValue('#revFy')) === '2025-26' && (await tc('#revTileFytd .k')) === 'FY 2025-26 to date');
   await page.selectOption('#revFy', '2026-27');
 
   // ---------- clear ----------

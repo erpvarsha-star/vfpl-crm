@@ -511,7 +511,7 @@
         slots.forEach(function (s) { restoreKey(s, "inc"); });
       }
     });
-    var hide = btn("Hide amounts", { class: "chip", id: "revHide", "aria-pressed": String(App.hideAmounts()), "data-fk": "hide" }, function () { pendingFocus = "hide"; App.setHideAmounts(!App.hideAmounts()); });
+    var hide = btn("Hide amounts", { class: "chip", id: "revHide", "aria-pressed": String(App.hideAmounts()), "data-fk": "hide" }, function () { pendingFocus = "hide"; App.setHideAmounts(!App.hideAmounts()); App.flush(); });
     card.appendChild(h("div", { class: "rev-ctrl" }, [h("label", { class: "rev-fy" }, ["Financial year", fySel]), to, sw, hide]));
 
     var stale = daysBetween(st.dataThrough, Store.todayISO());
