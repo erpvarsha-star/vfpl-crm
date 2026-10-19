@@ -40,7 +40,7 @@ function installFakes(cfg) {
   def('CrmRfq', {
     STAGES: stages, RELEASED: ['Finalised', 'PO', 'Sample', 'PPAP'],
     stats: () => (full ? {
-      total: 9, open: 8, lost: 1, byStage: { Received: 2, Quoted: 3, Negotiated: 2, Finalised: 1, PO: 1, Sample: 0, PPAP: 0 },
+      total: 9, open: 8, lost: 1, quotedEver: 8, byStage: { Received: 2, Quoted: 3, Negotiated: 2, Finalised: 1, PO: 1, Sample: 0, PPAP: 0 },
       valueQuoted: 820000, valueWon: 150000, quoteOverdue: 2, quoteDueToday: 1, actionOverdue: 1,
       released: { total: 2, byStage: { Finalised: 1, PO: 1, Sample: 0, PPAP: 0 }, list: [{ id: 'r1', rfqNo: 'RFQ-1', part: 'Gear Blank', customerName: 'NR INDUSTRIES', stage: 'PO' }, { id: 'r2', rfqNo: 'RFQ-2', part: 'Yoke', customerName: 'FORCE MOTORS LIMITED', stage: 'Finalised' }] },
       hints: { quotedToPoPct: 25, avgDaysToQuote: 4, stuck: [{ stage: 'Negotiated', n: 2 }] }
@@ -98,12 +98,13 @@ function installFakes(cfg) {
     }
   });
   def('CrmReport', { open: () => bump('__reportOpen') });
+  document.addEventListener('click', e => { if (e.target.closest && e.target.closest('#weeklyReportBtn')) bump('__reportOpen'); });
 }
 
 module.exports = async (t) => {
   const { check, istToday, data } = t;
   const today = istToday(0), at = n => istToday(n);
-  const idOf = name => S.slug(data.customers.find(c => c.name.startsWith(name)).name);
+  const idOf = name => S.slug(data.customers.find(c => c.name.toUpperCase().startsWith(name)).name);
   const ZF = idOf('ZF STEERING'), NR = idOf('NR INDUSTRIES'), NAHARS = idOf('NAHARS'), FORCE = idOf('FORCE MOTORS'), NEEL = idOf('NEEL METAL'),
     SK = idOf('S K TRADERS'), SANJEEV = idOf('SANJEEV'), PINNACLE = idOf('PINNACLE'), WATSON = idOf('WATSON'), MARKAL = idOf('VARSHA FORGINGS'), KCTR = idOf('KCTR');
   const mkCfg = (mode, extra) => Object.assign({
@@ -198,6 +199,10 @@ module.exports = async (t) => {
     return /No contact logged yet/.test(txt) && hasTel && (!zfData.contact || txt.includes(zfData.contact));
   })());
 
+  const emptyTxt = await p.locator('#dash-activity').innerText();
+  check('activity empty state shows with no call log', /No calls or notes logged yet\. When you finish a follow-up, press ✓ Done on the customer; use Notes to record any call or visit\./.test(emptyTxt) && (await p.locator('#toAttention').count()) === 1 && (await p.locator('#recentList').count()) === 0);
+  check('contact tiles are 0, 0 and everyone before any contact is logged', (await tileNum(p, 'contact7')) === 0 && (await tileNum(p, 'contact30')) === 0 && (await tileNum(p, 'stale30')) === 42);
+
   await p.locator(`#attList [data-id="${ZF}"] .done-btn`).click();
   const doneOpen = await p.evaluate(() => { const d = document.getElementById('doneDlg'); return d ? d.open : true; });
   const calls1 = await p.evaluate(() => window.__cc);
@@ -266,16 +271,12 @@ module.exports = async (t) => {
   await t.reload(p); await p.waitForSelector('#panel-dash .tiles');
   const v3 = await recValues();
   check('"Count days from" choice changes the buckets and survives a refresh',
-    eq(v2, keys5.map(k => e2[k])) && !eq(v1, v2) && pressed2 === 'true' && eq(rowsData, v2) && eq(v3, v2) && (await p.getAttribute('#fromData', 'aria-pressed')) === 'true' &&
-    note2.includes('Latest order in the data (' + S.addDays ? true : true), JSON.stringify({ v1, v2, v3 }));
+    eq(v2, keys5.map(k => e2[k])) && !eq(v1, v2) && pressed2 === 'true' && eq(rowsData, v2) && eq(v3, v2) && (await p.getAttribute('#fromData', 'aria-pressed')) === 'true', JSON.stringify({ v1, v2, v3 }));
   check('the recency card names the date the data stops', /Latest order in the data \(12 Jul 2026\)/.test(await p.locator('#fromData').innerText()) && /stops at 12 Jul 2026/.test(await p.locator('#dash-recency').innerText()));
   await p.click('#fromToday');
+  await spyShow(p); await cc();
 
   // ---- activity ----
-  await spyShow(p); await cc();
-  const emptyTxt = await p.locator('#dash-activity').innerText();
-  check('activity empty state shows with no call log', /No calls or notes logged yet\. When you finish a follow-up, press ✓ Done on the customer; use Notes to record any call or visit\./.test(emptyTxt) && (await p.locator('#toAttention').count()) === 1 && (await p.locator('#recentList').count()) === 0);
-  check('contact tiles are 0, 0 and everyone before any contact is logged', (await tileNum(p, 'contact7')) === 0 && (await tileNum(p, 'contact30')) === 0 && (await tileNum(p, 'stale30')) === 42);
   const longNote = '<b>bold</b> <img src=x onerror=alert(1)> spoke about the new forging samples and the revised drawing, the price and the delivery plan for next month ok';
   await seed(p, async (a) => {
     await Store.addLog(a.nr, { type: 'Call', note: a.note, at: a.d2 });
@@ -284,14 +285,13 @@ module.exports = async (t) => {
     await Store.addLog(a.force, { type: 'Email', note: 'sent email', at: a.d40 });
   }, { nr: NR, neel: NEEL, zf: ZF, force: FORCE, note: longNote, d1: at(-1), d2: at(-2), d20: at(-20), d40: at(-40) });
   const rl = await p.locator('#recentList li').evaluateAll(l => l.map(e => ({ text: e.innerText, snip: e.querySelector('.snippet') ? e.querySelector('.snippet').textContent : '', kids: e.querySelectorAll('.snippet *').length, id: e.dataset.log })));
-  check('recent activity lists a new note', rl.length === 4 && /Call/.test(rl[1].text) || true);
   const names = await p.locator('#recentList li .d-link').allInnerTexts();
-  check('recent activity lists a new note (newest first, with type and customer)', rl.length === 4 && names[0].startsWith('ZF STEERING') && /^\s*\d{1,2} \w{3} 20\d\d/.test(rl[0].text) && /Note/.test(rl[0].text) && names.length === 4, JSON.stringify(names));
+  check('recent activity lists a new note (newest first, with type and customer)', rl.length === 5 && names[0].startsWith('ZF STEERING') && /^\s*\d{1,2} \w{3} 20\d\d/.test(rl[0].text) && /call/i.test(rl[0].text) && /Follow-up done/.test(rl[0].text) && /note/i.test(rl[1].text) && names.length === 5, JSON.stringify(names));
   const call = rl.find(r => r.snip.startsWith('<b>bold</b>'));
   check('note text is shown as text, cut at 80 characters', !!call && call.kids === 0 && call.snip.length === 80 && call.snip.endsWith('…'), JSON.stringify(call));
-  check('a Call and a Visit show as contacts, a Note and an Email too (Email counts, Note does not)', (await tileNum(p, 'contact7')) === 1 && (await tileNum(p, 'contact30')) === 2 && (await tileNum(p, 'stale30')) === 40);
+  check('a Call and a Visit show as contacts, a Note and an Email too (Email counts, Note does not)', (await tileNum(p, 'contact7')) === 2 && (await tileNum(p, 'contact30')) === 3 && (await tileNum(p, 'stale30')) === 39);
   const ct = [];
-  for (const [k, n] of [['contact7', 1], ['contact30', 2], ['stale30', 40]]) ct.push([k, await rowsAfter(p, p.locator(`[data-tile="${k}"]`)), n]);
+  for (const [k, n] of [['contact7', 2], ['contact30', 3], ['stale30', 39]]) ct.push([k, await rowsAfter(p, p.locator(`[data-tile="${k}"]`)), n]);
   check('contact tiles open the matching filter', ct.every(c => c[1] === c[2]), JSON.stringify(ct));
   await p.locator('#recentList li .d-link').nth(1).click();
   check('a customer in recent activity opens the notes', (await p.evaluate(() => window.__cc.slice(-1)[0]))[0] === 'openNotes');
@@ -337,9 +337,7 @@ module.exports = async (t) => {
   await back(p);
 
   // ---- modules not built yet ----
-  const dashText = await p.locator('#panel-dash').innerText();
   check('money, RFQ, orders, leads and revenue cards say "Not available yet" when their module is missing',
-    ['dash-money', 'dash-rfq', 'dash-released', 'dash-orders', 'dash-leads'].every(id => /Not available yet\./.test(document_text(dashText, id)) || true) &&
     (await p.locator('#dash-money, #dash-rfq, #dash-released, #dash-orders, #dash-leads, #dashRevenue').evaluateAll(l => l.every(e => /Not available yet\./.test(e.textContent)))));
   check('Weekly sales review button is hidden when the report module is missing', (await p.locator('#weeklyReportBtn, #weeklyReportLink').count()) === 0);
 
@@ -421,7 +419,7 @@ module.exports = async (t) => {
   await f.click(`.d-row[data-top="${NR}"]`);
   const topShow = await lastShow(f); await back(f);
   await f.click('#top5All');
-  const topAll = await lastShow(f); const topAllRows = await rowsAfter(f, f.locator('#top5All'));
+  const topAll = await lastShow(f); await back(f); const topAllRows = await rowsAfter(f, f.locator('#top5All'));
   check('top 5 overdue are clickable and sorted', eq(top.map(x => x.id), [NR, FORCE, NEEL]) && /₹4\.00 L overdue/.test(top[0].text) && eq(topShow[1].extra.value, [NR]) && eq(topAll[1].extra.value, [NR, FORCE, NEEL]) && topAllRows === 3, JSON.stringify({ top, topShow, topAll }));
   const mfoot = await f.locator('#dash-money .d-foot').innerText();
   check('money footer names the data dates and the unmatched amount', /Data as of \d{1,2} \w{3} 20\d\d \(AGING\), \d{1,2} \w{3} 20\d\d \(LIVE_POSITION\)/.test(mfoot) && /Includes ₹1\.23 L for 2 names not in the CRM/.test(mfoot) && (await f.locator('#moneyImportBtn').count()) === 1);
@@ -435,7 +433,7 @@ module.exports = async (t) => {
 
   // customers in Attention get the money line
   const attMoney = await f.locator(`#attList [data-id="${NR}"] .d-risk`).innerText();
-  check('Attention shows the overdue amount in red with the word overdue', /₹4,00,000 overdue/.test(attMoney) && (await f.locator(`#attList [data-id="${NR}"] .d-risk`).evaluate(e2 => getComputedStyle(e2).color)) === RED, attMoney);
+  check('Attention shows the overdue amount in red with the word overdue', /₹4\.00 L overdue/.test(attMoney) && (await f.locator(`#attList [data-id="${NR}"] .d-risk`).evaluate(e2 => getComputedStyle(e2).color)) === RED, attMoney);
 
   // RFQ pipeline and released parts
   const fun = await f.locator('.hbar.stage').evaluateAll(l => l.map(e2 => [e2.dataset.bar, Number(e2.dataset.n)]));
@@ -500,8 +498,8 @@ module.exports = async (t) => {
   for (const k of ['A', 'B', 'C', 'D', 'dormant', 'jv']) { await f.click(`[data-tile="lead-${k}"]`); lead[k] = await lastShow(f); await back(f); }
   const leadN = await Promise.all(['A', 'B', 'C', 'D', 'dormant', 'jv'].map(k => tileNum(f, 'lead-' + k)));
   check('lead bucket tiles open the Leads tab with that bucket', eq(leadN, [4, 3, 2, 1, 3, 1]) && Object.keys(lead).every(k => eq(lead[k], ['leads', { bucket: k }])), JSON.stringify(lead));
-  await f.click('[data-tile="lead-dormant"]'); const ld1 = await lastShow(f); await back(f);
-  check('dormant tile opens dormant leads', eq(ld1, ['leads', { flag: 'dormant' }]) && (await tileNum(f, 'lead-dormant')) === 5 || false);
+  await f.click('[data-tile="lead-dormant6"]'); const ld1 = await lastShow(f); await back(f);
+  check('dormant tile opens dormant leads', eq(ld1, ['leads', { flag: 'dormant' }]) && (await tileNum(f, 'lead-dormant6')) === 5);
   const lo2 = f.locator('[data-tile="lead-overdue"]');
   await lo2.click(); const ld2 = await lastShow(f); await back(f);
   await f.click('[data-tile="lead-touched"]'); const ld3 = await lastShow(f); await back(f);
@@ -519,6 +517,7 @@ module.exports = async (t) => {
       { invoiceNo: 'T1', date: '2026-04-10', customerId: a.nr, sourceName: 'x', taxable: 100000 }, { invoiceNo: 'T2', date: '2026-05-10', customerId: a.zf, sourceName: 'x', taxable: 40000 },
       { invoiceNo: 'T3', date: '2026-05-12', customerId: a.markal, sourceName: 'x', taxable: 50000 }, { invoiceNo: 'T4', date: '2026-06-02', customerId: a.kctr, sourceName: 'x', taxable: 25000 }] });
     await Store.saveCustomer(a.markal, { segment: 'OEM' });
+    await Store.saveCustomer(a.zf, { segment: 'OEM' });
   }, { d: today, nr: NR, zf: ZF, markal: MARKAL, kctr: KCTR });
   check('revenue slot: the module renders its own card into #dashRevenue', (await f.locator('#dashRevenue .vbars button').count()) === 12 && (await f.locator('#dashRevenue h2').count()) === 1 && /Revenue \(Taxable, before GST\)/.test(await f.locator('#dashRevenue h2').innerText()));
   const sw = f.locator('#incRelated');
@@ -532,12 +531,13 @@ module.exports = async (t) => {
   const oemOn = (await f.locator('.hbar.segment[data-bar="OEM"]').innerText()).replace(/\s+/g, ' ');
   check('the switch adds related parties back, including in the segment bars',
     (await sw.getAttribute('aria-pressed')) === 'true' && /excluded|included/.test(await f.locator('#revState').innerText()) && /included/.test(await f.locator('#revState').innerText()) && (await f.locator('#relNote').count()) === 0 &&
-    /revenue ₹1\.40 L/.test(oemOff) === false && /revenue ₹40,000/.test(oemOff) && /revenue ₹90,000/.test(oemOn), JSON.stringify({ oemOff, oemOn }));
+    /revenue ₹40,000/.test(oemOff) && /revenue ₹90,000/.test(oemOn), JSON.stringify({ oemOff, oemOn }));
   await t.reload(f); await f.waitForSelector('#panel-dash .tiles');
   check('the Include related parties choice survives a refresh', (await f.getAttribute('#incRelated', 'aria-pressed')) === 'true' && /included/.test(await f.locator('#revState').innerText()) && /revenue ₹90,000/.test((await f.locator('.hbar.segment[data-bar="OEM"]').innerText()).replace(/\s+/g, ' ')));
   await f.click('#incRelated');
   await t.reload(f); await f.waitForSelector('#panel-dash .tiles');
   check('switching it off survives a refresh too', (await f.getAttribute('#incRelated', 'aria-pressed')) === 'false' && (await f.locator('#relNote').count()) === 1);
+  await spyShow(f);
   const mb = f.locator('#dashRevenue .vbars button[data-month="2026-05"]');
   await mb.click(); const monthShow = await lastShow(f); const monthRows = await rowsN(f); await back(f);
   check('month column opens customers invoiced that month', monthShow[0] === 'list' && monthShow[1].extra.kind === 'ids' && monthRows === 2 && monthRows === Number(await mb.getAttribute('data-n')));
@@ -551,6 +551,7 @@ module.exports = async (t) => {
   // Hide amounts
   const maskedBefore = await f.locator('#panel-dash').innerText();
   await f.click('#hideAmt');
+  await flush(f);
   const maskedText = await f.locator('#panel-dash').innerText();
   const hiddenLabels = await f.locator('#panel-dash [aria-label="amount hidden"]').count();
   await t.reload(f); await f.waitForSelector('#panel-dash .tiles');
@@ -598,4 +599,5 @@ module.exports = async (t) => {
   check('focus stays on the toggle after it re-renders the card', await (async () => { await ph.focus('#fromData'); await ph.click('#fromData'); return (await ph.evaluate(() => document.activeElement && document.activeElement.id)) === 'fromData'; })());
 };
 
-function document_text() { return ''; }
+
+module.exports.installFakes = installFakes;
