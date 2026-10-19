@@ -102,3 +102,17 @@ dialog#hubReviewDlg { width: min(880px, calc(100vw - 16px)); }
 .tag-s { font-size: .7rem; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; padding: 2px 8px; border-radius: 6px; background: var(--paper); color: var(--navy); }
 .tag-s.st-unchanged { background: var(--paper); color: var(--ink-dim); }
 .tag-s.st-update { background: var(--warn-bg); color: var(--warn); }
+
+/* ---------- table: short cells never break inside a word ---------- */
+#rfqTable td.age, #rfqTable td.qty { white-space: nowrap; }
+#rfqTable td.age { min-width: 5.5em; }
+#rfqTable td.dt > span:first-child { white-space: nowrap; }
+#rfqTable td.dt { min-width: 7.5em; }
+@media (max-width: 860px) {
+  #rfqTable td.age, #rfqTable td.dt { min-width: 0; }
+}
+
+/* ---------- "Filtered" bar and empty state ---------- */
+.rfq-filtered { justify-content: space-between; padding: 8px 12px; background: var(--card); border: 1px solid var(--line); border-radius: 10px; font-size: .9rem; }
+.rfq-filtered-text { overflow-wrap: anywhere; min-width: 0; flex: 1 1 200px; }
+#rfqEmpty { display: grid; justify-items: center; gap: 12px; }

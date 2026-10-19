@@ -381,6 +381,58 @@ module.exports = async (t) => {
   await nl.waitForSelector('#hubReviewDlg:not([open])', { state: 'attached' });
   check('the import still works without the Leads module', (await nRfq(nl)) === 4);
 
+
+  // =========================================================================================== polish: Age cell, "Filtered" bar, empty state
+  const pol = await boot();
+  await seed(pol, [
+    mk({ rfq_no: 'P-1', part_name: 'A long part name that wraps over several lines in a narrow column of the table', received: istToday(-12), waiting_on: 'customer' }),
+    mk({ rfq_no: 'P-2', stage: 'Quoted', part_name: 'Second part with another quite long description for wrapping', received: istToday(-46), quote_due: istToday(-3), stage_at: istToday(-40), waiting_on: 'us' }),
+    mk({ rfq_no: 'P-3', customer_id: CUST2_ID, customer_name: CUST2, part_name: 'Third', received: istToday(-1) })
+  ]);
+  await pol.click('#rfqViewTable');
+  for (const w of [1280, 1180, 1000, 375]) {
+    await pol.setViewportSize({ width: w, height: 900 });
+    const dims = await pol.evaluate(() => {
+      const cells = Array.from(document.querySelectorAll('#rfqRows td.age'));
+      const lines = cells.map((c) => { const r = document.createRange(); r.selectNodeContents(c); return new Set(Array.from(r.getClientRects()).map((x) => Math.round(x.top))).size; });
+      const wrap = document.getElementById('rfqTableWrap');
+      return { n: cells.length, lines, text: cells.map((c) => c.textContent), page: document.documentElement.scrollWidth, wrap: wrap.scrollWidth, wrapW: wrap.clientWidth };
+    });
+    check('the Age cell ("N days") never breaks inside the word and the table fits at ' + w + 'px', dims.n === 3 && dims.lines.every((l) => l === 1) && dims.text.every((x) => /^\d+ days?$/.test(x)) && dims.page <= w && dims.wrap <= dims.wrapW, JSON.stringify(dims));
+  }
+  await pol.setViewportSize({ width: 1280, height: 900 });
+  check('no "Filtered" bar when nothing is filtered', await pol.locator('#rfqFilterBar').isHidden());
+  await pol.evaluate(() => App.show('rfqs', { view: 'table', stage: 'Sample' }));
+  check('an empty result says which filters are on and offers Clear filters', /No RFQs match these filters: Stage: Sample\./.test(await pol.locator('#rfqEmptyText').innerText()) && await pol.locator('#rfqEmptyClear').isVisible());
+  check('the "Filtered" bar names the filter in plain words', /^Filtered: Stage: Sample$/.test((await pol.locator('#rfqFilterBar .rfq-filtered-text').innerText()).trim()) && await pol.locator('#rfqClearFilters').isVisible());
+  await pol.click('#rfqEmptyClear');
+  check('Clear filters in the empty state shows every RFQ again', (await pol.locator('#rfqRows tr').count()) === 3 && await pol.locator('#rfqFilterBar').isHidden() && await pol.locator('#rfqEmpty').isHidden());
+  await pol.evaluate((c) => App.show('rfqs', { view: 'table', stage: 'Quoted', flag: 'stuck', stuckStage: 'Quoted', waiting: 'us', customerId: c, q: 'second' }), CUST_ID);
+  const fw = (await pol.locator('#rfqFilterText').innerText());
+  check('every kind of filter is named: stage, flag, waiting, customer and search', /Stage: Quoted/.test(fw) && /Stuck over 30 days at Quoted/.test(fw) && /Waiting on us/.test(fw) && /Customer: ZF STEERING/.test(fw) && /Search: "second"/.test(fw) && (await pol.locator('#rfqRows tr').count()) === 1, fw);
+  await reload(pol);
+  check('the filters and the "Filtered" bar survive a refresh', await pol.locator('#rfqFilterBar').isVisible() && (await pol.locator('#rfqFilterText').innerText()) === fw && (await pol.locator('#rfqRows tr').count()) === 1);
+  await pol.focus('#rfqClearFilters');
+  await pol.keyboard.press('Enter');
+  check('Clear filters works from the keyboard and resets stage, flag, stuck, waiting, customer and search', (await pol.locator('#rfqRows tr').count()) === 3 && await pol.locator('#rfqFilterBar').isHidden() && (await pol.inputValue('#rfqQ')) === '' && (await pol.getAttribute('#rfqStageBar .chip[data-stage=""]', 'aria-pressed')) === 'true' && (await pol.evaluate(() => document.activeElement.id)) === 'rfqViewTable');
+  await reload(pol);
+  check('cleared filters stay cleared after a refresh', (await pol.locator('#rfqRows tr').count()) === 3 && await pol.locator('#rfqFilterBar').isHidden());
+  await pol.click('#rfqChipCust');
+  check('a filter set from a chip also shows the "Filtered" bar', /Filtered: Waiting on customer/.test(await pol.locator('#rfqFilterBar').innerText()) && (await pol.locator('#rfqRows tr').count()) === 1);
+  await pol.click('#rfqClearFilters');
+  check('Clear filters also resets a chip filter', (await pol.getAttribute('#rfqChipCust', 'aria-pressed')) === 'false' && (await pol.locator('#rfqRows tr').count()) === 3);
+  // released parts view with nothing released
+  await pol.evaluate(() => App.show('rfqs', { view: 'board', stage: 'released' }));
+  check('Released parts with no matches explains itself, keeps the note and offers Clear filters', /No RFQs match these filters: Released parts \(Finalised or later\)\./.test(await pol.locator('#rfqEmptyText').innerText()) && await pol.locator('#rfqReleasedNote').isVisible() && await pol.locator('#rfqEmptyClear').isVisible() && /Filtered: Released parts/.test(await pol.locator('#rfqFilterBar').innerText()));
+  await reload(pol);
+  check('the empty Released parts view survives a refresh with its Clear filters button', await pol.locator('#rfqEmptyClear').isVisible() && (await pol.getAttribute('#rfqChipReleased', 'aria-pressed')) === 'true');
+  await pol.click('#rfqEmptyClear');
+  check('Clear filters leaves the Released parts view and shows all RFQs', (await pol.locator('.rfq-card').count()) === 3 && await pol.locator('#rfqReleasedNote').isHidden() && (await pol.getAttribute('#rfqChipReleased', 'aria-pressed')) === 'false');
+  const pm = await boot({ viewport: { width: 375, height: 700 } });
+  await seed(pm, [mk({ rfq_no: 'PM-1', part_name: 'x' })]);
+  await pm.evaluate(() => App.show('rfqs', { stage: 'PPAP', waiting: 'customer', q: 'a rather long search phrase that must wrap' }));
+  check('the "Filtered" bar and the empty state fit at 375px', await pm.evaluate(() => document.documentElement.scrollWidth <= 375) && await pm.locator('#rfqEmptyClear').isVisible() && await pm.locator('#rfqClearFilters').isVisible());
+
   // =========================================================================================== phone width (375px)
   const m = await boot({ viewport: { width: 375, height: 700 } });
   await seed(m, [mk({ rfq_no: 'M-1', part_name: 'A very long part name for a forged steering component', quote_due: istToday(-3) }), mk({ rfq_no: 'M-2', stage: 'Quoted', quoted_value: 2500000, next_action: istToday(-1) }),
