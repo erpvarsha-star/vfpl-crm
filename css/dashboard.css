@@ -25,6 +25,8 @@
 #panel-dash .d-warn { color: var(--warn); font-weight: 700; }
 #panel-dash .d-empty { color: var(--ink-dim); padding: 8px 0; line-height: 1.5; }
 #panel-dash .d-risk { color: var(--risk); font-weight: 800; }
+#panel-dash .d-tag { display: inline-block; margin-left: 8px; padding: 1px 8px; border: 1px solid var(--ink-dim); border-radius: 6px; font-size: .7rem; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; color: var(--ink-dim); vertical-align: middle; }
+#panel-dash .d-relnote { margin: 10px 0 0; }
 #panel-dash .d-foot { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; margin-top: 14px; }
 #panel-dash .d-more { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
 #panel-dash .d-chips { display: flex; flex-wrap: wrap; gap: 8px; }
@@ -127,6 +129,20 @@
   #panel-dash .hbar { grid-template-columns: minmax(80px, 38%) 1fr auto; }
   #panel-dash .d-more .btn-sm { flex: 1 1 auto; }
   #panel-dash .d-acts .btn-sm { flex: 1 1 auto; }
+
+  /* On a phone the page is one long column: the cards that need action come first, cards with no data go last. */
+  #panel-dash .dgrid > * { order: 20; }
+  #panel-dash #dash-cust { order: 1; }
+  #panel-dash #dash-attention { order: 2; }
+  #panel-dash #dash-money:not(.d-nodata) { order: 3; }
+  #panel-dash #dash-rfq:not(.d-nodata) { order: 4; }
+  #panel-dash #dash-next7 { order: 5; }
+  #panel-dash #dashRelBar:not(.d-nodata), #panel-dash #dashRevenue:not(.d-nodata) { order: 6; }
+  #panel-dash #dash-released:not(.d-nodata) { order: 7; }
+  #panel-dash #dash-orders:not(.d-nodata) { order: 8; }
+  #panel-dash .dgrid > .d-nodata { order: 60; }
+  #panel-dash #dash-cust [data-tile="overdue"] { order: -2; }
+  #panel-dash #dash-cust [data-tile="today"] { order: -1; }
 }
 
 /* ---------- print: the Dashboard on one clean page ---------- */

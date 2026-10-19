@@ -80,7 +80,7 @@ function installFakes(cfg) {
       slot.textContent = '';
       slot.appendChild(mk('h2', 'Revenue (Taxable, before GST)', { id: 'dh-rev' }));
       if (!rows().length) {
-        slot.appendChild(mk('p', 'No invoice data yet. Export the INVOICE_REGISTER tab of the VFPL Collections Engine sheet as CSV and import it here. Revenue uses the Taxable column (before GST and TCS). Amounts stay in this browser only.'));
+        slot.appendChild(mk('p', 'No invoice data yet. Export the INVOICE_REGISTER tab of the VFPL Collections Engine sheet as CSV and import it here. Revenue uses the Taxable column (before GST and TCS). Amounts stay in this browser only.', { 'data-state': 'empty' }));
         slot.appendChild(mk('button', 'Import invoices', { id: 'revImportBtn', type: 'button' }));
         slot.lastChild.addEventListener('click', () => bump('__revImport'));
       } else {
@@ -527,7 +527,7 @@ module.exports = async (t) => {
   check('the Include related parties switch is shown once, off by default, with the "Excludes 2 related parties" note',
     (await sw.count()) === 1 && (await sw.getAttribute('aria-pressed')) === 'false' && (await f.locator('#relNote').innerText()) === 'Excludes 2 related parties (₹75,000)' && /excluded/.test(await f.locator('#revState').innerText()));
   await f.click('#relNote'); const relShow2 = await lastShow(f);
-  check('the Excludes note opens the related parties in Customers', eq(relShow2, ['list', { extra: { kind: 'related' } }]) && (await rowsN(f)) === 2);
+  check('the Excludes note opens the related parties in Customers', eq(relShow2, ['list', { extra: { kind: 'related' }, sort: 'follow' }]) && (await rowsN(f)) === 2);
   await back(f);
   const oemOff = (await f.locator('.hbar.segment[data-bar="OEM"]').innerText()).replace(/\s+/g, ' ');
   await f.click('#incRelated');
@@ -604,6 +604,75 @@ module.exports = async (t) => {
   await ph.emulateMedia({ media: 'screen' });
   await ph.click('#toExport'); await t.tab(ph, 'dash');
   check('focus stays on the toggle after it re-renders the card', await (async () => { await ph.focus('#fromData'); await ph.click('#fromData'); return (await ph.evaluate(() => document.activeElement && document.activeElement.id)) === 'fromData'; })());
+
+  // =========================================================================================================
+  // Polish round: related parties in the money card, links that replace (never merge) filters, phone order
+  // =========================================================================================================
+  const moneyRel = Object.assign({}, mkCfg('full').money, { [MARKAL]: { outstanding: 100000, overdue: 60000, b1_30: 60000 } });
+  const mr = await open(mkCfg('full', { money: moneyRel }));
+  await spyShow(mr);
+  const relLine = (await mr.locator('#moneyRelated').innerText()).replace(/\s+/g, ' ');
+  const topTags = await mr.locator('.d-top5 .d-row').evaluateAll(l => l.map(e2 => ({ id: e2.dataset.top, tag: [...e2.querySelectorAll('.d-tag')].map(x => x.textContent).join() })));
+  const relRows = await rowsAfter(mr, mr.locator('#moneyRelated'));
+  const relFilter = await lastShow(mr);
+  check('the money card says plainly that related parties are included, with their overdue amount', relLine === 'Includes 1 related party (₹60,000 overdue)' && (await mr.locator('#dash-money .d-relnote').count()) === 1, relLine);
+  check('Top 5 overdue marks a related party with a "Related party" tag and no one else', topTags.some(x => x.id === MARKAL && x.tag === 'Related party') && topTags.filter(x => x.id !== MARKAL).every(x => x.tag === ''), JSON.stringify(topTags));
+  check('the related-parties line opens exactly those customers', relRows === 1 && relFilter[0] === 'list' && eq(relFilter[1].extra.value, [MARKAL]), JSON.stringify(relFilter));
+  check('no related-parties line or tag when no related party owes money', (await f.locator('#moneyRelated').count()) === 0 && (await f.locator('#dash-money .d-tag').count()) === 0);
+  await mr.evaluate(() => App.setHideAmounts(true)); await flush(mr);
+  check('the related-parties line follows Hide amounts', (await mr.locator('#moneyRelated').innerText()).replace(/\s+/g, ' ') === 'Includes 1 related party (₹ ••• overdue)');
+
+  // a link replaces every filter of the target tab, whatever was set there before
+  const fl = await open(mkCfg('full'));
+  const viewOf = (pg, id) => pg.evaluate(i => JSON.stringify(App.view(i)), id);
+  await fl.evaluate(() => App.show('list', { q: 'zf', segment: 'OEM', group: 'nobody', extra: { kind: 'disputed' }, view: 'overdue', filter: 'At risk', sort: 'name' }));
+  await back(fl);
+  const rowsActive = await rowsAfter(fl, fl.locator('[data-tile="status-active"]'));
+  const vList = JSON.parse(await viewOf(fl, 'list'));
+  check('a Dashboard number replaces the Customers filters (nothing is merged, no hidden filter or sort is left)',
+    rowsActive === count(c => c.status === 'Active') && vList.filter === 'Active' && vList.view === 'all' && vList.q === '' && !vList.extra && !vList.segment && !vList.vseg && !vList.group && vList.sort === 'follow', JSON.stringify(vList));
+  await fl.click('[data-tile="overdue-amt"]'); await back(fl);
+  await fl.click('[data-tile="total"]');
+  const vList2 = JSON.parse(await viewOf(fl, 'list'));
+  check('the sort picked by the money links is not left behind by the next link', vList2.sort === 'follow' && vList2.filter === 'all' && !vList2.extra && (await rowsN(fl)) === 42, JSON.stringify(vList2));
+  await back(fl);
+
+  await fl.evaluate(() => App.show('rfqs', { flag: 'quoteOverdue', q: 'zzq', showLost: true, customerId: 'nr-industries', waiting: 'us' }));
+  await back(fl);
+  await fl.click('.hbar.stage[data-bar="Negotiated"]');
+  const vR = await viewOf(fl, 'rfqs');
+  check('an RFQ link replaces the RFQ filters', /Negotiated/.test(vR) && !/zzq|quoteOverdue|nr-industries/.test(vR) && !/"showLost":true/.test(vR) && !/"waiting":"us"/.test(vR), vR);
+  await back(fl);
+  await fl.evaluate(() => App.show('leads', { flag: 'overdue', q: 'zzq', fit: 'sweet' }));
+  await back(fl);
+  await fl.click('[data-tile="lead-A"]');
+  const vL = await viewOf(fl, 'leads');
+  check('a Leads link replaces the Leads filters', /"A"/.test(vL) && !/zzq|overdue|sweet/.test(vL), vL);
+  await back(fl);
+  await fl.evaluate(() => App.show('schedule', { sub: 'visits', vflag: 'missed', q: 'zzq', customerId: 'nr-industries' }));
+  await back(fl);
+  await fl.click('#visits7');
+  const vS = await viewOf(fl, 'schedule');
+  check('a Schedule link replaces the Schedule filters', /next7/.test(vS) && !/zzq|missed|nr-industries/.test(vS), vS);
+
+  // phone: the cards that need action come first, cards with no data go last
+  const pe = await open(mkCfg('empty'), { width: 375, height: 760 });
+  const tops = await pe.evaluate(() => {
+    const top = id => document.getElementById(id).getBoundingClientRect().top + window.scrollY;
+    const tile = k => document.querySelector(`[data-tile="${k}"]`).getBoundingClientRect();
+    const nodata = [...document.querySelectorAll('#panel-dash .dgrid > .d-nodata')].map(e2 => e2.id);
+    return { cust: top('dash-cust'), att: top('dash-attention'), nodata, nodataTop: Math.min(...[...document.querySelectorAll('#panel-dash .dgrid > .d-nodata')].map(e2 => e2.getBoundingClientRect().top + window.scrollY)),
+      others: [...document.querySelectorAll('#panel-dash .dgrid > :not(.d-nodata)')].map(e2 => e2.getBoundingClientRect().top + window.scrollY), overdue: tile('overdue'), today: tile('today'), total: tile('total'), first: document.querySelector('#dash-cust .d-tile').dataset.tile, vh: window.innerHeight };
+  });
+  check('on a phone the Overdue and Due today tiles come first and are on the first screen', tops.overdue.top < tops.today.top + 2 && tops.overdue.left < tops.today.left && tops.overdue.top <= tops.total.top && tops.overdue.top < tops.vh - 40 && tops.today.top < tops.vh - 40 && tops.first === 'total', JSON.stringify(tops));
+  check('on a phone the cards with no data go after every card that has data', ['dash-money', 'dash-rfq', 'dash-released', 'dash-orders', 'dash-leads', 'dashRevenue'].every(id => tops.nodata.includes(id)) && tops.others.every(x => x < tops.nodataTop) && tops.cust < tops.att, JSON.stringify(tops));
+  const pf = await open(mkCfg('full'), { width: 375, height: 760 });
+  const order = await pf.evaluate(() => ['dash-cust', 'dash-attention', 'dash-money', 'dash-rfq', 'dash-orders', 'dash-leads', 'dashRevenue'].map(id => [id, Math.round(document.getElementById(id).getBoundingClientRect().top + window.scrollY)]));
+  const tp = Object.fromEntries(order);
+  check('on a phone with data: customers, Attention, money and the RFQ pipeline come first, an empty revenue card last',
+    tp['dash-cust'] < tp['dash-attention'] && tp['dash-attention'] < tp['dash-money'] && tp['dash-money'] < tp['dash-rfq'] && tp['dash-rfq'] < tp['dash-orders'] && tp['dash-orders'] < tp['dash-leads'] && tp['dash-leads'] < tp['dashRevenue'], JSON.stringify(order));
+  const wide = await open(mkCfg('full'));
+  check('on a wide screen the cards keep the design order (money above Attention)', await wide.evaluate(() => document.getElementById('dash-money').getBoundingClientRect().top < document.getElementById('dash-attention').getBoundingClientRect().top && document.getElementById('dash-cust').getBoundingClientRect().top < document.getElementById('dash-money').getBoundingClientRect().top));
 
   // =========================================================================================================
   // End to end with the REAL modules (no fakes): import AGING, LIVE_POSITION and an invoice file with synthetic
