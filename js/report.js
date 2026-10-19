@@ -399,6 +399,9 @@
   function secRfq(m) {
     if (!m.funnel) return sec("repRfq", "RFQ pipeline", none("No data: the RFQ module is not available yet."));
     var kids = [];
+    if (m.rfq && m.rfq.total === 0 && !m.moves.total && !m.newRfqs) {
+      return sec("repRfq", "RFQ pipeline", none("No data: there are no RFQs yet. Add them on the RFQs tab."));
+    }
     kids.push(el("p", { class: "rp-funnel", text: m.funnel.map(function (f) { return f.stage + " " + f.n; }).join(" → ") }));
     kids.push(sub("Stage movements in this range (" + m.moves.total + ")"));
     if (!m.moves.total) kids.push(none("No stage movements in this range."));
