@@ -1,1 +1,102 @@
-/* report styles (owned by A8; stub from A1). */
+/* Weekly sales review (A8): full-screen dialog with one A4 sheet. Colours are the tokens from base.css. */
+dialog.report {
+  width: 100vw; max-width: 100vw; height: 100dvh; max-height: 100dvh; margin: 0; border-radius: 0; box-shadow: none;
+  background: var(--paper); color: var(--ink); overflow: hidden;
+}
+dialog.report[open] { display: flex; flex-direction: column; }
+dialog.report::backdrop { background: rgba(9, 22, 41, .6); }
+
+/* ---------- controls bar (screen only) ---------- */
+.rp-bar { flex: none; background: var(--card); border-bottom: 1px solid var(--line); padding: 10px 16px; display: grid; gap: 8px; }
+.rp-bar-row { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 10px 16px; }
+.rp-field { width: auto; min-width: 0; }
+.rp-field input { width: 11.5rem; max-width: 100%; padding: 7px 10px; }
+.rp-check { display: flex; align-items: center; gap: 8px; font-weight: 600; font-size: .9rem; min-height: 36px; }
+.rp-check input { width: 20px; height: 20px; padding: 0; flex: none; accent-color: var(--navy); }
+.rp-bar-actions { margin-left: auto; }
+.rp-bar .btn { padding: 9px 16px; }
+.rp-saved { font-size: .85rem; color: var(--ink-dim); align-self: center; }
+.rp-bar .form-err:empty { display: none; }
+.rp-warn { padding: 8px 12px; border-radius: 8px; background: var(--warn-bg); color: var(--warn); font-size: .85rem; font-weight: 600; }
+
+@media (min-width: 861px) {
+  .rp-bar { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 8px 24px; }
+  .rp-bar .form-err, .rp-bar .rp-warn { flex-basis: 100%; }
+}
+
+/* ---------- the sheet ---------- */
+.rp-scroll { flex: 1; min-height: 0; overflow: auto; padding: 16px 0 32px; }
+#reportPage {
+  display: flex; flex-direction: column;
+  width: min(210mm, 100%); min-height: 297mm; margin: 0 auto; padding: 11mm;
+  background: #fff; color: #14243d; font-size: 10pt; line-height: 1.25;
+  box-shadow: 0 4px 24px rgba(9, 22, 41, .25);
+  -webkit-print-color-adjust: exact; print-color-adjust: exact;
+}
+#reportPage.rp-measure { width: 210mm; min-height: 0 !important; height: auto; }
+.rp-body { flex: 1; display: flex; flex-direction: column; gap: 5px; min-width: 0; }
+
+.rp-head { display: flex; align-items: center; gap: 12px; padding-bottom: 6px; border-bottom: 2px solid var(--navy); }
+.rp-badge { flex: none; background: #fff; border: 1px solid var(--line); border-radius: 10px; padding: 2px; line-height: 0; }
+.rp-badge img { width: 40px; height: 40px; object-fit: contain; display: block; }
+.rp-title { flex: 1; min-width: 0; }
+.rp-h1 { font-size: 14pt; font-weight: 800; color: var(--navy); line-height: 1.15; }
+.rp-range { font-size: 10pt; font-weight: 600; color: var(--ink-dim); }
+.rp-prep { font-size: 9pt; color: var(--ink-dim); text-align: right; flex: none; }
+
+.rp-boxes { display: grid; grid-template-columns: repeat(auto-fit, minmax(0, 1fr)); gap: 6px; }
+.rp-box { border: 1px solid var(--line); border-radius: 6px; padding: 4px 6px; min-width: 0; }
+.rp-n { font-size: 14pt; font-weight: 800; color: var(--navy); line-height: 1.1; overflow-wrap: anywhere; }
+.rp-l { font-size: 7.5pt; font-weight: 700; color: var(--ink-dim); text-transform: uppercase; letter-spacing: .02em; line-height: 1.15; }
+
+.rp-grid { display: block; column-count: 2; column-gap: 14px; }
+.rp-grid > .rp-sec { break-inside: avoid; margin-bottom: 6px; }
+.rp-sec { min-width: 0; }
+.rp-sec h2 { font-size: 9pt; font-weight: 800; text-transform: uppercase; letter-spacing: .04em; color: var(--navy); border-bottom: 1px solid var(--line); padding-bottom: 1px; margin-bottom: 3px; }
+.rp-sec h3 { font-size: 8.5pt; font-weight: 700; color: var(--ink-dim); margin: 3px 0 1px; }
+.rp-list, .rp-actions { list-style: none; display: grid; gap: 1px; font-size: 9pt; line-height: 1.2; }
+.rp-list li, .rp-actions li { overflow-wrap: anywhere; }
+.rp-actions { list-style: decimal; padding-left: 18px; }
+.rp-cols { display: block; column-count: 2; column-gap: 14px; }
+.rp-cols li { break-inside: avoid; margin-bottom: 1px; }
+.rp-more { color: var(--ink-dim); font-style: italic; }
+.rp-line { font-size: 9pt; overflow-wrap: anywhere; }
+.rp-funnel { font-size: 9.5pt; font-weight: 700; color: var(--navy); overflow-wrap: anywhere; }
+.rp-names { font-size: 9pt; overflow-wrap: anywhere; }
+.rp-none { font-size: 9pt; color: var(--ink-dim); }
+.rp-small { font-size: 8pt; color: var(--ink-dim); }
+.rp-foot { margin-top: auto; padding-top: 4px; border-top: 1px solid var(--line); display: grid; gap: 1px; }
+.rp-red { color: var(--risk); font-weight: 700; }
+.rp-orange { color: var(--warn); font-weight: 700; }
+.rp-amt { font-variant-numeric: tabular-nums; }
+
+/* ---------- phone: one column, sheet fills the width ---------- */
+@media screen and (max-width: 640px) {
+  .rp-bar { padding: 8px 12px; }
+  .rp-bar-actions { margin-left: 0; width: 100%; }
+  .rp-bar-actions .btn { flex: 1; }
+  .rp-field { flex: 1 1 8rem; }
+  .rp-field input { width: 100%; }
+  #reportPage:not(.rp-measure) { padding: 12px; min-height: 0; }
+  #reportPage:not(.rp-measure) .rp-grid { column-count: 1; }
+  #reportPage:not(.rp-measure) .rp-cols { column-count: 1; }
+  #reportPage:not(.rp-measure) .rp-boxes { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  #reportPage:not(.rp-measure) .rp-head { flex-wrap: wrap; }
+  #reportPage:not(.rp-measure) .rp-prep { text-align: left; flex-basis: 100%; }
+}
+
+/* ---------- print: only the sheet, exactly one A4 page ---------- */
+@media print {
+  body.print-report { background: #fff; }
+  body.print-report > *:not(#reportDlg) { display: none !important; }
+  body.print-report #reportDlg {
+    display: block !important; position: static; width: auto; max-width: none; height: auto; max-height: none;
+    border: 0; box-shadow: none; overflow: visible; background: #fff;
+  }
+  body.print-report .no-print { display: none !important; }
+  body.print-report .rp-scroll { overflow: visible; padding: 0; }
+  body.print-report #reportPage {
+    width: 210mm; height: 297mm; min-height: 0; margin: 0; box-shadow: none; overflow: hidden;
+    break-after: avoid; break-inside: avoid;
+  }
+}
