@@ -1,0 +1,66 @@
+/* Customers tab (A1 ports Phase 1; A2 extends). */
+.search {
+  margin-left: auto; flex: 1 1 220px; max-width: 320px;
+  font: inherit; padding: 10px 14px; border-radius: 10px; border: 1.5px solid var(--line); background: var(--card); color: var(--ink);
+}
+.search:focus { outline: 3px solid var(--orange); outline-offset: 1px; border-color: var(--orange); }
+.extra-chip { display: inline-flex; align-items: center; gap: 4px; padding: 4px 6px 4px 15px; background: var(--navy); border-color: var(--navy); color: #fff; cursor: default; }
+.extra-x { font: inherit; font-size: 1.1rem; line-height: 1; border: 0; background: none; color: #fff; cursor: pointer; padding: 4px 8px; border-radius: 999px; }
+.extra-x:hover { background: rgba(255,255,255,.2); }
+.extra-x:focus-visible { outline: 3px solid var(--orange); outline-offset: 1px; }
+
+/* ---------- table ---------- */
+table { width: 100%; border-collapse: collapse; }
+th, td { text-align: left; padding: 12px 12px; vertical-align: middle; }
+thead th { background: var(--navy); color: #fff; font-size: .78rem; letter-spacing: .08em; text-transform: uppercase; font-weight: 700; white-space: nowrap; }
+th button { all: unset; cursor: pointer; }
+th button:focus-visible, .clr:focus-visible { outline: 3px solid var(--orange); outline-offset: 3px; }
+tbody tr + tr td { border-top: 1px solid var(--line); }
+tbody tr:hover td { background: #f8f9fc; }
+tbody tr.overdue td { background: #fff5f4; }
+tbody tr.overdue td:first-child { box-shadow: inset 4px 0 0 var(--risk); }
+td.name { font-weight: 700; }
+.tag { display: inline-block; margin-left: 8px; font-size: .7rem; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; padding: 2px 8px; border-radius: 6px; background: var(--risk-bg); color: var(--risk); vertical-align: middle; }
+.guess { color: var(--ink-dim); font-style: italic; }
+td a { color: var(--navy); text-decoration: none; border-bottom: 1px dotted var(--ink-dim); }
+td a:hover { color: var(--orange); border-color: var(--orange); }
+.s-active { background: var(--ok-bg); color: var(--ok); }
+.s-follow { background: var(--warn-bg); color: var(--warn); }
+.s-risk   { background: var(--risk-bg); color: var(--risk); }
+select.st { appearance: none; -webkit-appearance: none; cursor: pointer; border: 0; font: inherit; font-weight: 700; font-size: .85rem;
+  padding: 6px 30px 6px 14px; border-radius: 999px; width: auto;
+  background-image: linear-gradient(45deg, transparent 50%, currentColor 50%), linear-gradient(135deg, currentColor 50%, transparent 50%);
+  background-position: calc(100% - 15px) 55%, calc(100% - 10px) 55%; background-size: 5px 5px, 5px 5px; background-repeat: no-repeat; }
+select.st:focus-visible { outline: 3px solid var(--orange); outline-offset: 2px; }
+.fu { display: flex; flex-direction: column; align-items: flex-start; gap: 3px; }
+.fu-row { display: flex; align-items: center; gap: 4px; }
+.fu input { width: auto; padding: 6px 8px; font-size: .9rem; border-radius: 8px; }
+.fu.over input { border-color: var(--risk); background: var(--risk-bg); color: var(--risk); font-weight: 700; }
+.fu.today input { border-color: var(--warn); background: var(--warn-bg); color: var(--warn); font-weight: 700; }
+.rel { font-size: .8rem; font-weight: 600; color: var(--ink-dim); }
+.over .rel { color: var(--risk); font-weight: 800; }
+.today .rel { color: var(--warn); font-weight: 800; }
+.clr, .rm { font: inherit; border: 0; background: none; color: var(--ink-dim); cursor: pointer; font-size: 1.15rem; line-height: 1; padding: 4px 7px; border-radius: 6px; }
+.clr:hover, .rm:hover { color: var(--risk); background: var(--risk-bg); }
+.empty { padding: 40px 16px; text-align: center; color: var(--ink-dim); }
+.foot { margin-top: 16px; font-size: .85rem; color: var(--ink-dim); }
+
+/* ---------- phone: rows become cards ---------- */
+@media (max-width: 860px) {
+  thead { display: none; }
+  table, tbody, tr, td { display: block; width: 100%; }
+  tbody tr { padding: 14px 16px; }
+  tbody tr + tr { border-top: 1px solid var(--line); }
+  tbody tr + tr td, tbody tr td { border-top: 0; }
+  tbody tr.overdue td, tbody tr:hover td { background: none; }
+  tbody tr.overdue { background: #fff5f4; box-shadow: inset 4px 0 0 var(--risk); }
+  tbody tr.overdue td:first-child { box-shadow: none; }
+  td { padding: 4px 0; display: flex; justify-content: space-between; align-items: center; gap: 16px; }
+  td::before { content: attr(data-label); color: var(--ink-dim); font-size: .8rem; font-weight: 600; flex: none; }
+  td.name { display: block; font-size: 1.05rem; padding-bottom: 6px; }
+  td.name::before { content: none; }
+  td.act { justify-content: flex-end; }
+  td.act::before { content: none; }
+  .fu { align-items: flex-end; }
+  .search { max-width: none; margin-left: 0; flex-basis: 100%; }
+}
