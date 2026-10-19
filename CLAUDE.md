@@ -20,6 +20,7 @@ Independent project. Work only in this repo (`vfpl-crm`). Never touch `vfpl-dash
 - **Sonnet agents build, read and deploy.** Every build, read (repo, sheet, database) and deploy task is done by a Sonnet agent that reports back to the lead.
 - **The lead checks.** The lead briefs each agent fully, then verifies the result (tests, diff, live check) before telling the user it is done. Agents do not push to `main` without the lead's check.
 - **Links at every step:** after each completed step, push and give the user the git links (commit, files) and the live-view link, so they can check it in a browser.
+- **HTML first, backend later:** everything is built and reviewed as a working HTML prototype (localStorage store) first. Supabase build, deploy and login start only after the user reviews the HTML and says GO. When a push is ready to review, notify the user clearly (chat message plus push notification) with the links.
 - **Process per phase:** blueprint, the user's GO, design, build, test, deploy, then a short skill harvest (new gotchas go in the list below).
 
 ## Gotchas (learned the hard way)
