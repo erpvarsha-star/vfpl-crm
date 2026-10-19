@@ -1204,13 +1204,19 @@ Ownership is exclusive while a task runs. Each task uses its own branch `phase2/
 | Task | Owns | Starts after | Parallel with |
 |---|---|---|---|
 | **A1 Shell + store + split** | `index.html`, `css/base.css`, `js/store.js`, `js/csv.js`, `js/ui.js`, `js/importer.js`, `js/app.js`, `js/boot.js`, the first version of `js/customers.js` + `css/customers.css` (Phase 1 features ported), stubs of every other module file, `assets/favicon-64.png`, `.gitignore`, the runner + A1 tests | design approved | none |
-| **A2 Customers features** (P2-A/B/C + money column) | `js/customers.js`, `css/customers.css`, `tests/checks/20-customers.js` | A1 merged | A3–A6 |
-| **A3 Dashboard** (P2-F + released-parts card) | `js/dashboard.js`, `css/dashboard.css`, `tests/checks/40-dashboard.js`, `tests/unit/dashboard-unit.js` | A1 merged | A2, A4–A6 |
-| **A4 RFQs** (P2-H/J) | `js/rfqs.js`, `css/rfqs.css`, `tests/checks/50-rfqs.js`, `tests/unit/rfqs-unit.js` | A1 merged | A2, A3, A5, A6 |
-| **A5 Schedule + Money import** (P2-I, P2-G) | `js/schedule.js`, `css/schedule.css`, `js/money.js`, `css/money.css`, `tests/checks/60-schedule.js`, `tests/checks/70-money.js`, `tests/unit/money-unit.js`, `tests/unit/schedule-unit.js` | A1 merged (+ the lead's exact AGING/LIVE_POSITION headers when available) | A2–A4, A6 |
-| **A6 Export + integration** (P2-E) | `js/export.js`, `css/export.css`, `tests/checks/30-export.js`, `tests/unit/export-unit.js`; after all merges: `README.md` + the `--strict` integration run | A1 merged; integration after A2–A5 | A2–A5 |
+| **A2 Customers features** (P2-A/B/C/K + money and revenue lines) | `js/customers.js`, `css/customers.css`, `tests/checks/20-customers.js` | A1 merged | A3–A8 |
+| **A3 Dashboard** (P2-F + released parts + segment/group breakdowns + the revenue card layout) | `js/dashboard.js`, `css/dashboard.css`, `tests/checks/40-dashboard.js`, `tests/unit/dashboard-unit.js` | A1 merged | A2, A4–A8 |
+| **A4 RFQs** (P2-H/J) | `js/rfqs.js`, `css/rfqs.css`, `tests/checks/50-rfqs.js`, `tests/unit/rfqs-unit.js` | A1 merged | A2, A3, A5–A8 |
+| **A5 Schedule + Money import** (P2-I, P2-G) | `js/schedule.js`, `css/schedule.css`, `js/money.js`, `css/money.css`, `tests/checks/60-schedule.js`, `tests/checks/70-money.js`, `tests/unit/money-unit.js`, `tests/unit/schedule-unit.js` | A1 merged (+ the lead's exact AGING/LIVE_POSITION headers when available) | A2–A4, A6–A8 |
+| **A6 Export + integration** (P2-E) | `js/export.js`, `css/export.css`, `tests/checks/30-export.js`, `tests/unit/export-unit.js`; after all merges: `README.md` + the `--strict` integration run | A1 merged; integration after A2–A5, A7, A8 | A2–A5, A7, A8 |
+| **A7 Revenue + targets** (P2-L) | `js/revenue.js`, `css/revenue.css`, `tests/checks/75-revenue.js`, `tests/unit/revenue-unit.js` | A1 merged | A2–A6, A8 |
+| **A8 Weekly sales review** (P2-M) | `js/report.js`, `css/report.css`, `tests/checks/80-report.js`, `tests/unit/report-unit.js` | A1 merged | A2–A7 |
 
-Order: **A1 → (A2 ∥ A3 ∥ A4 ∥ A5 ∥ A6) → merge in the order A2, A5, A4, A3, A6, running the full suite after each merge → A6 integration (`--strict`, zero SKIP) + README → the user reviews on Pages → GO for stage B.**
+How the revenue card is split: **A7 builds the whole revenue card DOM** as `CrmRevenue.renderCard(el)`, plus the targets dialog and the import. A3 only puts a slot `<section id="dashRevenue">` in the grid and calls `CrmRevenue.renderCard(slot)` when the module exists (empty state otherwise). Add `renderCard(el)` to the §4.5 `CrmRevenue` contract; A1 includes it in the stub. This way the large revenue UI is owned by one agent.
+
+P2-K is split by file: data, validation, seed and export in `store.js` (**A1**); the Edit dialog sections, badges, filters and search in `customers.js` (**A2**); the breakdown cards in `dashboard.js` (**A3**); the CSV columns in `export.js` (**A6**).
+
+Order: **A1 (about 10–12 h) → A2 ∥ A3 ∥ A4 ∥ A5 ∥ A6 ∥ A7 ∥ A8 (about 20–24 h) → merge in the order A2, A5, A4, A7, A8, A3, A6, running the full suite after each merge (about 4 h) → A6 integration (`--strict`, zero SKIP) + README (about 4 h) → the user reviews on Pages → GO for stage B.** Total is about 48 h.
 
 **A1 owns the split.**
 - Step 1: move the inline `<style>` into `css/base.css` (+ the Customers parts into `css/customers.css`) and the inline `<script>` into `js/app.js` / `js/customers.js`, with **no behaviour change**. The 27 old checks must pass at this point.
@@ -1223,7 +1229,7 @@ What each task reports: test output (PASS/SKIP counts), the API as built (or "ma
 - **Inputs:** §1–§4, §5.1, §5.2 (Phase 1 parts + extra filter), §5.8, §6.1, and the A1 checks.
 - **Acceptance:** A1 checks pass; no CSP violations; the favicon looks right; Phase 1 behaviour is unchanged.
 
-**A2–A6 inputs and acceptance**
+**A2–A8 inputs and acceptance**
 - **Inputs:** their §5 section, §4 contracts, and their §6.2 checks.
 - **Acceptance:** their checks pass on their branch (cross-module ones may SKIP) and every earlier check still passes. After merge everything passes with `--strict`.
 
