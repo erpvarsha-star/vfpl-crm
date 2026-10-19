@@ -472,12 +472,24 @@ module.exports = async (t) => {
   await leadRow(rq, 'Rfq Test').locator('.l-conv summary').click();
   await leadRow(rq, 'Rfq Test').locator('.l-rfq').click();
   const args = await rq.evaluate(() => window.__rfq);
-  if (!realRfq) { await until(rq, () => (Store.col('leads').all()[0].converted_rfq_ids || []).length === 1); await rq.evaluate(() => App.flush()); }
+  let dlgFill = null;
+  if (realRfq) {
+    // the real New RFQ dialog opens with the lead's name; saving it creates an RFQ that belongs to the lead
+    await rq.waitForSelector('#rfqDlg[open]');
+    dlgFill = await rq.evaluate(() => ({ customer: document.getElementById('rfqCustomer').value, part: document.getElementById('rfqPartName').value }));
+    await rq.click('#rfqSave');
+    await rq.waitForFunction(() => !document.getElementById('rfqDlg').open);
+  }
+  await until(rq, () => (Store.col('leads').all()[0].converted_rfq_ids || []).length === 1);
+  await t.tab(rq, 'leads');
+  await rq.evaluate(() => App.flush());
   const afterRfq = (await leadsIn(rq))[0];
+  const rfqRow = await rq.evaluate(() => Store.col('rfqs').all()[0] || null);
   check('convert to RFQ creates an RFQ linked to the lead', !!args && args[0] === null && args[1].leadId === rid && args[1].customerName === 'Rfq Test Co' && args[1].partName === 'Brake discs' &&
-    (realRfq ? true : afterRfq.converted_rfq_ids.length === 1 && /1 RFQ/.test(await leadRow(rq, 'Rfq Test').innerText())), JSON.stringify(args));
-  if (realRfq) skip('the RFQ made from a lead shows on the lead as "1 RFQ"', 'needs A4 (its New RFQ dialog)');
-  else { await reload(rq); check('the RFQ link survives a refresh', /1 RFQ/.test(await leadRow(rq, 'Rfq Test').innerText())); }
+    !!rfqRow && rfqRow.lead_id === rid && !rfqRow.customer_id && afterRfq.converted_rfq_ids.length === 1 && /1 RFQ/.test(await leadRow(rq, 'Rfq Test').innerText()) &&
+    (!realRfq || (dlgFill.customer === 'Rfq Test Co' && dlgFill.part === 'Brake discs')), JSON.stringify([args, dlgFill, rfqRow && rfqRow.lead_id]));
+  await reload(rq);
+  check('the RFQ link survives a refresh', /1 RFQ/.test(await leadRow(rq, 'Rfq Test').innerText()) && (await leadsIn(rq))[0].converted_rfq_ids.length === 1);
   await rq.evaluate(() => { delete window.CrmRfq; delete window.CrmCustomers.openAdd; });
   await leadRow(rq, 'Rfq Test').locator('.l-conv summary').click();
   await leadRow(rq, 'Rfq Test').locator('.l-rfq').click();
