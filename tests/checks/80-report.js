@@ -73,11 +73,28 @@ module.exports = async (t) => {
     head.includes('Varsha Forgings · Weekly sales review') && head.includes('(India time)') && head.includes(dm(D(-6)) + ' – ' + full(D(0))) && head.includes('Prepared ' + full(D(0))), head);
   const empty = await k.text();
   check('with no data every list says so and nothing crashes', /No overdue follow-ups/.test(empty) && /No calls or visits logged/.test(empty) && /No customers are marked At risk/.test(empty) && /No follow-ups are overdue/.test(empty));
-  check('missing modules show a clear no-data line, and their sections are absent',
-    /No data: the RFQ module is not available yet/.test(empty) && /No data: the Leads module is not available yet/.test(empty) &&
-    /No data for: Money overdue.*Late orders.*Revenue vs target/.test(empty) && !(await k.has('repMoney')) && !(await k.has('repOrders')) && !(await k.has('repRevenue')));
   check('the report holds no email or phone when there is nothing to show', !/@|\+91/.test(empty));
+  if (await t.has(page, 'window.CrmRfq && CrmRfq.stats')) {
+    check('with the real RFQ module and zero RFQs the pipeline shows an inline no-data line', /No data: there are no RFQs yet/.test(await k.sec('repRfq')) && !/Received 0/.test(await k.sec('repRfq')));
+  }
   await k.close();
+
+  // Missing modules are simulated explicitly: every module global is deleted before the report opens, and put back afterwards.
+  await page.evaluate(() => { window.__realMods = {}; ['CrmRfq', 'CrmMoney', 'CrmSchedule', 'CrmLeads', 'CrmRevenue'].forEach(n => { window.__realMods[n] = window[n]; delete window[n]; }); });
+  await k.open();
+  const gone = await k.text();
+  check('missing modules show a clear no-data line, and their sections are absent',
+    /No data: the RFQ module is not available yet/.test(gone) && /No data: the Leads module is not available yet/.test(gone) &&
+    /No data for: Money overdue.*Late orders.*Revenue vs target/.test(gone) && !(await k.has('repMoney')) && !(await k.has('repOrders')) && !(await k.has('repRevenue')));
+  check('modules that return no stats (null) are handled like missing ones', await (async () => {
+    await k.close();
+    await page.evaluate(() => { window.CrmRfq = { stats: () => null }; window.CrmMoney = { stats: () => null }; window.CrmSchedule = { orderStats: () => null }; window.CrmLeads = { stats: () => null }; window.CrmRevenue = { stats: () => null }; });
+    await k.open();
+    const x = await k.text();
+    return /No data: the RFQ module is not available yet/.test(x) && /No data for: Money overdue.*Late orders.*Revenue vs target/.test(x);
+  })());
+  await k.close();
+  await page.evaluate(() => { Object.keys(window.__realMods).forEach(n => { if (window.__realMods[n]) window[n] = window.__realMods[n]; else delete window[n]; }); });
 
   /* ---------- a normal week ---------- */
   const S = await k.seed({ overdue: 9, due: 4, contacts: 8, moves: 9, leads: 4, leadTouch: true, orders: 2 });
@@ -237,6 +254,32 @@ module.exports = async (t) => {
     return items.length === 5 && /^Call /.test(items[0]) && items.slice(1).every(x => /^Follow up lead /.test(x)) && /Fallback Lead 0/.test(items[1]) && /overdue by 30 days/.test(items[1]);
   })());
   await kc.close();
+
+  /* ---------- the real RFQ module (when present) with synthetic RFQs in several stages ---------- */
+  if (await t.has(cl, 'window.CrmRfq && CrmRfq.stats')) {
+    const { page: rp } = await t.fresh();
+    await t.open(rp);
+    const kr = kit(rp);
+    await kr.reset();
+    const exp = await rp.evaluate(() => {
+      const today = Store.todayISO(), add = n => Store.addDays(today, n);
+      const mk = (i, stage, o) => {
+        const id = 'real-' + i;
+        Store.col('rfqs').insert(Object.assign({ id, rfq_no: 'R-' + i, customer_name: 'Imaginary Buyer ' + i, part_name: 'Part ' + i, received: add(-5), quote_due: add(5), stage, stage_at: add(-3), next_action: null, lost: false, quoted_value: null }, o || {}));
+        Store.col('rfq_history').insert({ rfq_id: id, from: null, to: 'Received', at: add(-5) });
+        if (stage !== 'Received') Store.col('rfq_history').insert({ rfq_id: id, from: 'Received', to: stage, at: add(-(i % 3) - 1) });
+      };
+      ['Received', 'Received', 'Quoted', 'Negotiated', 'PO', 'PO', 'PPAP'].forEach((s, i) => mk(i, s, i === 0 ? { quote_due: add(-4) } : null));   // RFQ 0 has an overdue quote
+      mk(7, 'Quoted', { lost: true });
+      const st = CrmRfq.stats(today);
+      return { funnel: CrmRfq.STAGES.map(s => s + ' ' + st.byStage[s]).join(' → '), quoteOverdue: st.quoteOverdue, total: st.total };
+    });
+    await kr.open();
+    const rr = await kr.sec('repRfq');
+    check('with the real RFQ module the funnel numbers match CrmRfq.stats', rr.includes(exp.funnel) && /Received 2 → Quoted 1 → Negotiated 1 → Finalised 0 → PO 2 → Sample 0 → PPAP 1/.test(rr), rr + ' | ' + exp.funnel);
+    check('with the real RFQ module quote overdue and the in-range moves are shown', exp.quoteOverdue === 1 && /Quote overdue: 1/.test(rr) && /Received → (Quoted|Negotiated|PO|PPAP)/.test(rr) && /Stage movements in this range \(6\)/.test(rr) && /New RFQs in range: 8/.test(rr), rr);
+    check('real RFQ numbers also feed the headline box', /6\s*\n?\s*RFQS MOVED/i.test(await rp.locator('.rp-boxes').innerText()));
+  }
 
   /* ---------- one A4 page ---------- */
   const { page: wide } = await t.fresh({ viewport: { width: 794, height: 1200 } });
