@@ -11,7 +11,9 @@
       "last": "2026-07-12",
       "followUp": "",
       "status": "Active",
-      "disputed": false
+      "disputed": false,
+      "relatedParty": true,
+      "erpGroup": "VARSHA FORGINGS LTD MARKAL"
     },
     {
       "name": "ZF STEERING GEAR (INDIA) LTD",
@@ -23,7 +25,9 @@
       "last": "2026-07-12",
       "followUp": "",
       "status": "Active",
-      "disputed": false
+      "disputed": false,
+      "relatedParty": false,
+      "erpGroup": "ZF STEERING GEAR (INDIA) LTD"
     },
     {
       "name": "Sanjeev Auto Part Manufacturers Pvt Ltd",
@@ -35,7 +39,9 @@
       "last": "2026-07-11",
       "followUp": "",
       "status": "Active",
-      "disputed": false
+      "disputed": false,
+      "relatedParty": false,
+      "erpGroup": "Sanjeev Auto Part Manufacturers Pvt Ltd"
     },
     {
       "name": "KCTR VARSHA AUTOMOTIVE PVT. LTD.",
@@ -47,7 +53,9 @@
       "last": "2026-07-09",
       "followUp": "",
       "status": "Active",
-      "disputed": false
+      "disputed": false,
+      "relatedParty": true,
+      "erpGroup": "KCTR VARSHA AUTOMOTIVE PVT. LTD."
     },
     {
       "name": "SANGKAJ AUTO COMPONENTS PRIVATE LIMITED",
@@ -59,7 +67,9 @@
       "last": "2026-06-29",
       "followUp": "",
       "status": "Active",
-      "disputed": false
+      "disputed": false,
+      "relatedParty": false,
+      "erpGroup": "SANGKAJ INDUSTRIES PVT. LTD."
     },
     {
       "name": "SANGKAJ INDUSTRIES PVT. LTD.",
@@ -71,7 +81,9 @@
       "last": "2026-07-07",
       "followUp": "",
       "status": "Active",
-      "disputed": false
+      "disputed": false,
+      "relatedParty": false,
+      "erpGroup": "SANGKAJ INDUSTRIES PVT. LTD."
     },
     {
       "name": "LAXMI AGNI COMPONENTS & FORGING PVT.LTD-V",
@@ -83,7 +95,9 @@
       "last": "",
       "followUp": "",
       "status": "At risk",
-      "disputed": false
+      "disputed": false,
+      "relatedParty": false,
+      "erpGroup": "LAXMI AGNI COMPONENTS & FORGING PVT.LTD-V"
     },
     {
       "name": "Nahars Engineering India Pvt Ltd..",
@@ -95,7 +109,9 @@
       "last": "2026-07-12",
       "followUp": "",
       "status": "Active",
-      "disputed": false
+      "disputed": false,
+      "relatedParty": false,
+      "erpGroup": "Nahars Engineering India Pvt Ltd.."
     },
     {
       "name": "NR INDUSTRIES",
@@ -107,7 +123,9 @@
       "last": "2026-06-25",
       "followUp": "",
       "status": "Active",
-      "disputed": false
+      "disputed": false,
+      "relatedParty": false,
+      "erpGroup": "NR INDUSTRIES"
     },
     {
       "name": "NEEL METAL PRODUCTS LIMITED",
@@ -119,7 +137,9 @@
       "last": "2026-07-12",
       "followUp": "",
       "status": "Active",
-      "disputed": false
+      "disputed": false,
+      "relatedParty": false,
+      "erpGroup": "NEEL METAL PRODUCTS LIMITED"
     },
     {
       "name": "PINNACLE MOBILITY SOLUTIONS PVT. LTD.",
@@ -131,7 +151,9 @@
       "last": "2026-06-28",
       "followUp": "",
       "status": "Active",
-      "disputed": false
+      "disputed": false,
+      "relatedParty": false,
+      "erpGroup": "PINNACLE MOBILITY SOLUTIONS PVT. LTD."
     },
     {
       "name": "Ziemer GmbH & Co. KG",
@@ -143,7 +165,9 @@
       "last": "",
       "followUp": "",
       "status": "At risk",
-      "disputed": false
+      "disputed": false,
+      "relatedParty": false,
+      "erpGroup": "Ziemer GmbH & Co. KG"
     },
     {
       "name": "FORCE MOTORS LIMITED",
@@ -155,7 +179,9 @@
       "last": "2026-06-30",
       "followUp": "",
       "status": "Active",
-      "disputed": false
+      "disputed": false,
+      "relatedParty": false,
+      "erpGroup": "FORCE MOTORS LIMITED"
     },
     {
       "name": "WATSON& CHALIN INDIA PRIVATE LIMITED",
@@ -167,7 +193,9 @@
       "last": "2026-07-09",
       "followUp": "",
       "status": "Active",
-      "disputed": false
+      "disputed": false,
+      "relatedParty": false,
+      "erpGroup": "WATSON& CHALIN INDIA PRIVATE LIMITED"
     },
     {
       "name": "S K TRADERS",
@@ -179,7 +207,9 @@
       "last": "2026-05-24",
       "followUp": "",
       "status": "Follow up",
-      "disputed": false
+      "disputed": false,
+      "relatedParty": false,
+      "erpGroup": "S K TRADERS"
     },
     {
       "name": "AGGARWAL SOUNDCAST PVT. LTD.",
@@ -191,7 +221,9 @@
       "last": "",
       "followUp": "",
       "status": "At risk",
-      "disputed": false
+      "disputed": false,
+      "relatedParty": false,
+      "erpGroup": "AGGARWAL SOUNDCAST PVT. LTD."
     },
     {
       "name": "JAGADAMBA AUTO-COMPONENTS LTD.",
@@ -203,7 +235,9 @@
       "last": "",
       "followUp": "",
       "status": "At risk",
-      "disputed": false
+      "disputed": false,
+      "relatedParty": false,
+      "erpGroup": "JAGADAMBA AUTO-COMPONENTS LTD."
     },
     {
       "name": "MOSDORFER INDIA PVT. LTD.",
@@ -215,7 +249,9 @@
       "last": "2026-07-06",
       "followUp": "",
       "status": "Active",
-      "disputed": false
+      "disputed": false,
+      "relatedParty": false,
+      "erpGroup": "MOSDORFER INDIA PVT. LTD."
     },
     {
       "name": "FOUR STAR INDUSTRIES PVT. LTD.",
@@ -227,7 +263,9 @@
       "last": "",
       "followUp": "",
       "status": "At risk",
-      "disputed": false
+      "disputed": false,
+      "relatedParty": false,
+      "erpGroup": "FOUR STAR INDUSTRIES PVT. LTD."
     },
     {
       "name": "PERFECT CAM PROFILE PRIVET LIMITED",
@@ -239,7 +277,9 @@
       "last": "",
       "followUp": "",
       "status": "At risk",
-      "disputed": false
+      "disputed": false,
+      "relatedParty": false,
+      "erpGroup": "PERFECT CAM PROFILE PRIVET LIMITED"
     },
     {
       "name": "SFS GROUP INDIA PRIVATE LIMITED",
@@ -251,7 +291,9 @@
       "last": "2026-07-02",
       "followUp": "",
       "status": "Active",
-      "disputed": false
+      "disputed": false,
+      "relatedParty": false,
+      "erpGroup": "SFS GROUP INDIA PRIVATE LIMITED"
     },
     {
       "name": "AKAR AUTO INDUSTRIES LTD (UNIT-2)",
@@ -263,7 +305,9 @@
       "last": "",
       "followUp": "",
       "status": "At risk",
-      "disputed": false
+      "disputed": false,
+      "relatedParty": false,
+      "erpGroup": "AKAR AUTO INDUSTRIES LTD (UNIT-2)"
     },
     {
       "name": "S M AUTO ENGG PVT. LTD.",
@@ -275,7 +319,9 @@
       "last": "2026-04-27",
       "followUp": "",
       "status": "At risk",
-      "disputed": false
+      "disputed": false,
+      "relatedParty": false,
+      "erpGroup": "S M AUTO ENGG PVT. LTD."
     },
     {
       "name": "HIGHWAY INDUSTRIES LIMITED.",
@@ -287,7 +333,9 @@
       "last": "",
       "followUp": "",
       "status": "At risk",
-      "disputed": false
+      "disputed": false,
+      "relatedParty": false,
+      "erpGroup": "HIGHWAY INDUSTRIES LIMITED."
     },
     {
       "name": "LINDNER RECYCLINGTECH GmbH",
@@ -299,7 +347,9 @@
       "last": "",
       "followUp": "",
       "status": "At risk",
-      "disputed": false
+      "disputed": false,
+      "relatedParty": false,
+      "erpGroup": "LINDNER RECYCLINGTECH GmbH"
     },
     {
       "name": "KALYANI TECHNOFORGE LTD",
@@ -311,7 +361,9 @@
       "last": "",
       "followUp": "",
       "status": "At risk",
-      "disputed": false
+      "disputed": false,
+      "relatedParty": false,
+      "erpGroup": "KALYANI TECHNOFORGE LTD"
     },
     {
       "name": "BHC Gummi-Metall GmbH",
@@ -323,7 +375,9 @@
       "last": "",
       "followUp": "",
       "status": "At risk",
-      "disputed": false
+      "disputed": false,
+      "relatedParty": false,
+      "erpGroup": "BHC Gummi-Metall GmbH"
     },
     {
       "name": "2P TECHNOLOGIES",
@@ -335,7 +389,9 @@
       "last": "",
       "followUp": "",
       "status": "At risk",
-      "disputed": false
+      "disputed": false,
+      "relatedParty": false,
+      "erpGroup": "2P TECHNOLOGIES"
     },
     {
       "name": "FRAP S.p.A",
@@ -347,7 +403,9 @@
       "last": "",
       "followUp": "",
       "status": "At risk",
-      "disputed": false
+      "disputed": false,
+      "relatedParty": false,
+      "erpGroup": "FRAP S.p.A"
     },
     {
       "name": "SRJ PEETY STEELS PRIVATE LIMITED",
@@ -359,7 +417,9 @@
       "last": "2026-07-11",
       "followUp": "",
       "status": "Active",
-      "disputed": false
+      "disputed": false,
+      "relatedParty": false,
+      "erpGroup": "SRJ PEETY STEELS PRIVATE LIMITED"
     },
     {
       "name": "TORK MOTORS- Billing 1",
@@ -371,7 +431,9 @@
       "last": "",
       "followUp": "",
       "status": "At risk",
-      "disputed": true
+      "disputed": true,
+      "relatedParty": false,
+      "erpGroup": "TORK MOTORS- Billing 1"
     },
     {
       "name": "AMTEK AUTO LTD(SANASWADI)",
@@ -383,7 +445,9 @@
       "last": "",
       "followUp": "",
       "status": "At risk",
-      "disputed": true
+      "disputed": true,
+      "relatedParty": false,
+      "erpGroup": "AMTEK AUTO LTD(SANASWADI)"
     },
     {
       "name": "DAIMLER INDIA COMMERCIAL VEHICLES PVT. LTD.",
@@ -395,7 +459,9 @@
       "last": "",
       "followUp": "",
       "status": "At risk",
-      "disputed": true
+      "disputed": true,
+      "relatedParty": false,
+      "erpGroup": "DAIMLER INDIA COMMERCIAL VEHICLES PVT. LTD."
     },
     {
       "name": "MANSONS INTERNATIONAL PVT.LTD",
@@ -407,7 +473,9 @@
       "last": "",
       "followUp": "",
       "status": "At risk",
-      "disputed": true
+      "disputed": true,
+      "relatedParty": false,
+      "erpGroup": "MANSONS INTERNATIONAL PVT.LTD"
     },
     {
       "name": "VE COMMERCIAL VEHICLES LTD",
@@ -419,7 +487,9 @@
       "last": "",
       "followUp": "",
       "status": "At risk",
-      "disputed": true
+      "disputed": true,
+      "relatedParty": false,
+      "erpGroup": "VE COMMERCIAL VEHICLES LTD"
     },
     {
       "name": "INDSUR GEARS LIMITED",
@@ -431,7 +501,9 @@
       "last": "",
       "followUp": "",
       "status": "At risk",
-      "disputed": true
+      "disputed": true,
+      "relatedParty": false,
+      "erpGroup": "INDSUR GEARS LIMITED"
     },
     {
       "name": "TIRUPATI ENGINEERING WORKS",
@@ -443,7 +515,9 @@
       "last": "",
       "followUp": "",
       "status": "At risk",
-      "disputed": true
+      "disputed": true,
+      "relatedParty": false,
+      "erpGroup": "TIRUPATI ENGINEERING WORKS"
     },
     {
       "name": "PERFECT AUTO ENGINEERS",
@@ -455,7 +529,9 @@
       "last": "",
       "followUp": "",
       "status": "At risk",
-      "disputed": true
+      "disputed": true,
+      "relatedParty": false,
+      "erpGroup": "PERFECT AUTO ENGINEERS"
     },
     {
       "name": "WINDALS AUTO PVT LTD",
@@ -467,7 +543,9 @@
       "last": "",
       "followUp": "",
       "status": "At risk",
-      "disputed": true
+      "disputed": true,
+      "relatedParty": false,
+      "erpGroup": "WINDALS AUTO PVT LTD"
     },
     {
       "name": "AURANGABAD AUTO ANCILLARY PVT. LTD",
@@ -479,7 +557,9 @@
       "last": "",
       "followUp": "",
       "status": "At risk",
-      "disputed": true
+      "disputed": true,
+      "relatedParty": false,
+      "erpGroup": "AURANGABAD AUTO ANCILLARY PVT. LTD"
     },
     {
       "name": "ZELTEX MAGNETICS PVT.LTD",
@@ -491,7 +571,9 @@
       "last": "",
       "followUp": "",
       "status": "At risk",
-      "disputed": true
+      "disputed": true,
+      "relatedParty": false,
+      "erpGroup": "ZELTEX MAGNETICS PVT.LTD"
     },
     {
       "name": "OMKAR ENGINEERING UNIT-II",
@@ -503,7 +585,9 @@
       "last": "",
       "followUp": "",
       "status": "At risk",
-      "disputed": true
+      "disputed": true,
+      "relatedParty": false,
+      "erpGroup": "OMKAR ENGINEERING UNIT-II"
     }
   ]
 }

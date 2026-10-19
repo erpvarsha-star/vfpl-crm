@@ -1,0 +1,7 @@
+# private data and tooling: never commit
+*.csv
+data-private/
+node_modules
+varsha-crm-backup-*.json
+supabase/.generated/
+.env*
