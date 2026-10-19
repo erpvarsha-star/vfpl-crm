@@ -1347,7 +1347,7 @@
     $("mergeSummary").textContent = t.total + " compan" + (t.total === 1 ? "y" : "ies") + " from " + st.rows.length + " row" + (st.rows.length === 1 ? "" : "s") +
       " · " + t.created + " new · " + t.updated + " to update" + (t.notes ? " · " + t.notes + " as customer notes" : "") + " · " + t.skipped + " skipped";
     var parts = [];
-    if (t.created || !t.updated) parts.push("Create " + t.created + " lead" + (t.created === 1 ? "" : "s"));
+    if (t.created || (!t.updated && !t.notes)) parts.push("Create " + t.created + " lead" + (t.created === 1 ? "" : "s"));
     if (t.updated) parts.push((parts.length ? "update " : "Update ") + t.updated);
     if (t.notes) parts.push((parts.length ? "save " : "Save ") + t.notes + " note" + (t.notes === 1 ? "" : "s"));
     $("mergeOk").textContent = parts.join(", ");

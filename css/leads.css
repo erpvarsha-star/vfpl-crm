@@ -58,7 +58,7 @@ dialog.lead-dlg { width: min(640px, calc(100vw - 16px)); }
 dialog.lead-wide { width: min(920px, calc(100vw - 16px)); }
 dialog.lead-dlg[open], dialog.lead-wide[open] { display: flex; flex-direction: column; max-height: calc(100dvh - 16px); }
 .lead-dlg form, .lead-wide form { display: flex; flex-direction: column; min-height: 0; gap: 0; padding: 0; }
-.dlg-scroll { overflow-y: auto; max-height: calc(100dvh - 190px); padding: 18px 22px; display: grid; gap: 12px; align-content: start; }
+.dlg-scroll { overflow-y: auto; max-height: calc(100dvh - 190px); padding: 18px 22px; display: grid; grid-template-columns: minmax(0, 1fr); gap: 12px; align-content: start; }
 .lead-dlg form > .actions, .lead-wide > .actions { padding: 12px 22px 18px; border-top: 1px solid var(--line); margin: 0; }
 .lead-dlg #leadCloseForm, .lead-dlg #internalForm { padding: 18px 22px; gap: 12px; display: grid; }
 .lead-dlg textarea, #internalList { font: inherit; font-size: 1rem; padding: 10px 12px; border: 1.5px solid var(--line); border-radius: 10px; resize: vertical; width: 100%; }
@@ -74,10 +74,10 @@ dialog.lead-dlg[open], dialog.lead-wide[open] { display: flex; flex-direction: c
 .msum { font-weight: 700; font-size: .9rem; }
 .minc { display: flex; align-items: center; gap: 8px; font-weight: 700; font-size: .9rem; }
 .minc input { width: auto; flex: none; }
-.mcards { display: grid; gap: 12px; }
-.mcard { border: 1.5px solid var(--line); border-radius: 12px; padding: 12px 14px; display: grid; gap: 8px; min-width: 0; background: #fff; }
+.mcards { display: grid; grid-template-columns: minmax(0, 1fr); gap: 12px; }
+.mcard { border: 1.5px solid var(--line); border-radius: 12px; padding: 12px 14px; display: grid; grid-template-columns: minmax(0, 1fr); gap: 8px; min-width: 0; background: #fff; }
 .mcard.off { opacity: .65; background: #f6f7fb; }
-.mhead { display: grid; gap: 4px; min-width: 0; }
+.mhead { display: grid; grid-template-columns: minmax(0, 1fr); gap: 4px; min-width: 0; }
 .mname { font-size: 1.02rem; overflow-wrap: anywhere; }
 .mvals { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 2px 12px; font-size: .85rem; }
 .mvals dt { color: var(--ink-dim); font-weight: 600; }
@@ -89,7 +89,7 @@ dialog.lead-dlg[open], dialog.lead-wide[open] { display: flex; flex-direction: c
 .mrad input { width: auto; flex: none; margin-top: 3px; }
 .mrad span { min-width: 0; overflow-wrap: anywhere; white-space: pre-wrap; }
 .mtools { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
-.m-match { width: auto; max-width: 100%; font-size: .85rem; padding: 6px 8px; }
+.m-match { width: auto; max-width: 100%; min-width: 0; font-size: .85rem; padding: 6px 8px; }
 
 /* ---------- phone: rows become cards ---------- */
 @media (min-width: 1001px) {
