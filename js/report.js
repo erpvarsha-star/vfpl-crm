@@ -53,13 +53,26 @@
     if (over) Object.keys(over).forEach(function (k) { if (typeof over[k] === "number" && over[k] >= 0) caps[k] = Math.floor(over[k]); });
     return caps;
   }
-  /* Caps reduced by `level` (never below MIN_CAP, never above the default). Used to fit one page. */
-  function capsAtLevel(level) {
-    var caps = {};
-    Object.keys(DEFAULT_CAPS).forEach(function (k) {
-      caps[k] = k === "actions" ? DEFAULT_CAPS[k] : Math.max(MIN_CAP, DEFAULT_CAPS[k] - level * (DEFAULT_CAPS[k] > 10 ? 3 : 1));
+  /* One step towards fitting a page: shorten the list that currently shows the most items (ties go to the least important list),
+     never below MIN_CAP, never the top-5 actions. Returns a new caps object, or null when nothing more can be shortened. */
+  var TRIM_ORDER = ["notes", "names", "leadNames", "reactivate", "moneyTop", "lateOrders", "atRisk", "moves", "dueNext", "overdue"];
+  function nextCaps(model, caps) {
+    var totals = {
+      moves: model.moves.total, overdue: model.overdue.total, dueNext: model.dueNext.total, atRisk: model.atRisk.total,
+      names: model.contact.namesTotal, notes: model.contact.notes ? model.contact.notes.total : 0,
+      lateOrders: model.lateOrders ? model.lateOrders.items.length + model.lateOrders.more : 0,
+      moneyTop: model.money ? model.money.top.total : 0, reactivate: model.leads.reactivate.total, leadNames: model.leads.touched.total
+    };
+    var best = null, bestShown = MIN_CAP;
+    TRIM_ORDER.forEach(function (k) {
+      var shown = Math.min(totals[k] || 0, caps[k]);
+      if (shown > bestShown) { best = k; bestShown = shown; }
     });
-    return caps;
+    if (!best) return null;
+    var out = {};
+    Object.keys(caps).forEach(function (k) { out[k] = caps[k]; });
+    out[best] = bestShown - 1;
+    return out;
   }
 
   function contactName(c, includeContacts) {
@@ -287,7 +300,7 @@
     };
   }
 
-  var pure = { compute: compute, scrub: scrub, DEFAULT_CAPS: DEFAULT_CAPS, capsAtLevel: capsAtLevel, STAGES: STAGES_DEFAULT,
+  var pure = { compute: compute, scrub: scrub, DEFAULT_CAPS: DEFAULT_CAPS, nextCaps: nextCaps, STAGES: STAGES_DEFAULT,
                defaultRange: function (today) { today = isISO(today) ? today : todayIST(); return { from: addDays(today, -6), to: today }; } };
 
   if (typeof module !== "undefined" && module.exports) module.exports = pure;
@@ -352,6 +365,7 @@
   function red(text) { return el("span", { class: "rp-red", text: text }); }
   function orange(text) { return el("span", { class: "rp-orange", text: text }); }
   function sep() { return " · "; }
+  function nm(s, n) { s = String(s); return s.length > n ? s.slice(0, n - 1).trimEnd() + "…" : s; }   // long names are shortened to keep lists on one line
   function none(text) { return el("p", { class: "rp-none", text: text }); }
   function more(n) { return n > 0 ? el("li", { class: "rp-more", text: "+" + n + " more" }) : null; }
   function sub(text) { return el("h3", { text: text }); }
@@ -389,7 +403,7 @@
     kids.push(sub("Stage movements in this range (" + m.moves.total + ")"));
     if (!m.moves.total) kids.push(none("No stage movements in this range."));
     else kids.push(el("ul", { class: "rp-list rp-cols" }, m.moves.items.map(function (x) {
-      return li(dm(x.at) + sep() + x.rfq + (x.customer ? sep() + x.customer : "") + sep() + (x.from ? x.from + " → " : "→ ") + x.to);
+      return li(dm(x.at) + sep() + x.rfq + (x.customer ? sep() + nm(x.customer, 24) : "") + sep() + (x.from ? x.from + " → " : "→ ") + x.to);
     }).concat([more(m.moves.more)])));
     var foot = ["New RFQs in range: " + m.newRfqs + sep()];
     if (m.quoteOverdue > 0) foot.push(red("Quote overdue: " + m.quoteOverdue)); else foot.push("Quote overdue: 0");
@@ -402,12 +416,12 @@
     kids.push(sub("Overdue follow-ups (" + m.overdue.total + ")"));
     if (!m.overdue.total) kids.push(none("No overdue follow-ups."));
     else kids.push(el("ul", { class: "rp-list" }, m.overdue.items.map(function (x) {
-      return li([x.name, " — ", red(overdueWords(x.days)), contactBit(x, m.includeContacts)]);
+      return li([nm(x.name, 30), " — ", red(overdueWords(x.days)), contactBit(x, m.includeContacts)]);
     }).concat([more(m.overdue.more)])));
     kids.push(sub("Due in the next 7 days (" + m.dueNext.total + ")"));
     if (!m.dueNext.total) kids.push(none("Nothing due in the next 7 days."));
     else kids.push(el("ul", { class: "rp-list" }, m.dueNext.items.map(function (x) {
-      return li([x.name, " — ", x.days === 0 ? orange("Due today") : "Due " + Ui.fmt.day(x.followUp), contactBit(x, m.includeContacts)]);
+      return li([nm(x.name, 30), " — ", x.days === 0 ? orange("Due today") : "Due " + Ui.fmt.day(x.followUp), contactBit(x, m.includeContacts)]);
     }).concat([more(m.dueNext.more)])));
     return sec("repFollow", "Follow-ups", kids);
   }
@@ -416,12 +430,12 @@
     var c = m.contact, bt = c.byType, kids = [];
     kids.push(el("p", { class: "rp-line" }, "Calls " + bt.Call + sep() + "Visits " + bt.Visit + sep() + "Emails " + bt.Email + sep() + "Telegram " + bt.Telegram + sep() + c.total + " logged"));
     if (!c.total) kids.push(none("No calls or visits logged in this range."));
-    else kids.push(el("p", { class: "rp-names" }, c.names.join(", ") + (c.namesMore ? " +" + c.namesMore + " more" : "")));
+    else kids.push(el("p", { class: "rp-names" }, c.names.map(function (n) { return nm(n, 26); }).join(", ") + (c.namesMore ? " +" + c.namesMore + " more" : "")));
     if (c.notes) {
       kids.push(sub("Notes (private)"));
       if (!c.notes.total) kids.push(none("No note text in this range."));
       else kids.push(el("ul", { class: "rp-list" }, c.notes.items.map(function (n) {
-        return li(dm(n.at) + sep() + n.name + ": " + n.text);
+        return li(dm(n.at) + sep() + nm(n.name, 26) + ": " + n.text);
       }).concat([more(c.notes.more)])));
     }
     return sec("repContact", "Calls and visits this week", kids);
@@ -432,7 +446,7 @@
     var kids = [];
     if (!r.total) kids.push(none("No customers are marked At risk."));
     else kids.push(el("ul", { class: "rp-list" }, r.items.map(function (x) {
-      return li(x.name + sep() + "last order " + (x.last ? Ui.fmt.date(x.last) : "none") + sep() + "last contacted " + (x.lastContacted ? Ui.fmt.date(x.lastContacted) : "never"));
+      return li(nm(x.name, 28) + sep() + "last order " + (x.last ? dm(x.last) : "none") + sep() + "contacted " + (x.lastContacted ? dm(x.lastContacted) : "never"));
     }).concat([more(r.more)])));
     return sec("repRisk", "At-risk customers (" + r.total + ")", kids);
   }
@@ -447,7 +461,7 @@
     x.buckets.forEach(function (b, i) { if (b.amount != null) { if (parts_.length) parts_.push(sep()); parts_.push(b.label + " ", Ui.amountEl(b.amount, "rp-amt", true)); } });
     if (parts_.length) kids.push(el("p", { class: "rp-line" }, parts_));
     if (x.top.total) kids.push(el("ul", { class: "rp-list" }, x.top.items.map(function (t) {
-      return li([t.name + " — ", Ui.amountEl(t.overdue, "rp-amt", true)]);
+      return li([nm(t.name, 34) + " — ", Ui.amountEl(t.overdue, "rp-amt", true)]);
     }).concat([more(x.top.more)])));
     return sec("repMoney", "Money overdue", kids);
   }
@@ -459,7 +473,7 @@
     if (x.dueWeek) head.push(sep() + "Due this week: " + x.dueWeek);
     kids.push(el("p", { class: "rp-line" }, head));
     if (x.items.length) kids.push(el("ul", { class: "rp-list" }, x.items.map(function (o) {
-      return li([(o.orderNo ? o.orderNo + sep() : "") + o.customer + (o.part ? sep() + o.part : "") + sep() + "promised " + dm(o.promised) + " — ", red("Late by " + plural(o.days, "day"))]);
+      return li([(o.orderNo ? o.orderNo + sep() : "") + nm(o.customer, 22) + (o.part ? sep() + o.part : "") + sep() + "promised " + dm(o.promised) + " — ", red("Late by " + plural(o.days, "day"))]);
     }).concat([more(x.more)])));
     return sec("repOrders", "Late orders", kids);
   }
@@ -487,12 +501,12 @@
     var kids = [];
     kids.push(sub("Leads touched this week (" + L.touched.total + ")"));
     if (!L.touched.total) kids.push(none("No leads were contacted in this range."));
-    else kids.push(el("p", { class: "rp-names", text: L.touched.names.join(", ") + (L.touched.more ? " +" + L.touched.more + " more" : "") }));
+    else kids.push(el("p", { class: "rp-names", text: L.touched.names.map(function (n) { return nm(n, 26); }).join(", ") + (L.touched.more ? " +" + L.touched.more + " more" : "") }));
     kids.push(el("p", { class: "rp-line" }, L.followOverdue > 0 ? [red("Lead follow-ups overdue: " + L.followOverdue)] : ["Lead follow-ups overdue: 0"]));
     kids.push(sub("Dormant leads to reactivate"));
     if (!L.reactivate.total) kids.push(none("No dormant leads to show."));
     else kids.push(el("ul", { class: "rp-list" }, L.reactivate.items.map(function (r) {
-      return li(r.company + (r.lastContact ? sep() + "last contact " + Ui.fmt.date(r.lastContact) : sep() + "no contact logged") + (r.category ? sep() + r.category : ""));
+      return li(nm(r.company, 28) + (r.lastContact ? sep() + "last contact " + dm(r.lastContact) + " " + r.lastContact.slice(0, 4) : sep() + "no contact logged"));
     }).concat([more(L.reactivate.more)])));
     return sec("repLeads", "Leads", kids);
   }
@@ -501,8 +515,8 @@
     var kids = [];
     if (!m.actions.total) kids.push(none("No follow-ups are overdue or due in the next 7 days."));
     else kids.push(el("ol", { class: "rp-actions" }, m.actions.items.map(function (a) {
-      if (a.kind === "lead") return li(["Follow up lead ", a.name + ": ", red("follow-up overdue by " + plural(a.days, "day"))]);
-      var who = a.name + contactBit(a, m.includeContacts);
+      if (a.kind === "lead") return li(["Follow up lead ", nm(a.name, 40) + ": ", red("follow-up overdue by " + plural(a.days, "day"))]);
+      var who = nm(a.name, 40) + contactBit(a, m.includeContacts);
       if (a.kind === "overdue") return li(["Call " + who + ": ", red("follow-up overdue by " + plural(a.days, "day"))]);
       return li(["Call " + who + ": ", a.days === 0 ? orange("follow-up due today") : "follow-up due " + Ui.fmt.day(a.followUp)]);
     })));
@@ -552,14 +566,21 @@
     var deps = gather(current);
     deps.includeNotes = parts.notes.checked;
     deps.includeContacts = parts.contacts.checked;
-    var page = parts.page, model = null, level = 0, fits = false;
-    for (level = 0; level <= 8; level++) {
-      deps.caps = capsAtLevel(level);
+    var page = parts.page, model = null, steps = 0, fits = false, heights = [], caps = mergeCaps(null);
+    for (steps = 0; steps < 80; steps++) {
+      deps.caps = caps;
       model = compute({ from: current.from, to: current.to }, deps);
       Ui.clear(page).appendChild(buildPage(model));
-      if (contentHeight(page) <= A4_PX - 1) { fits = true; break; }
+      var h = contentHeight(page);
+      heights.push(Math.round(h));
+      if (h <= A4_PX - 1) { fits = true; break; }
+      var next = nextCaps(model, caps);
+      if (!next) break;
+      caps = next;
     }
-    if (level > 8) level = 8;
+    parts.page.dataset.trimSteps = String(steps);
+    parts.page.dataset.fitHeights = heights.join(",");
+    var level = steps;
     parts.warn.hidden = fits && level === 0;
     parts.warn.textContent = fits
       ? "This week has more items than fit on one page; the lists are shortened, so open the tabs for the full lists."
@@ -597,8 +618,11 @@
   }
 
   /* ---------- print ---------- */
+  /* @page cannot be scoped by a class, so the A4 / no-margin rule is added only while the report prints. */
   function endPrint() {
     document.body.classList.remove("print-report");
+    var st = document.getElementById("repPageStyle");
+    if (st) st.remove();
     if (printTitle != null) { document.title = printTitle; printTitle = null; }
   }
   function doPrint() {
@@ -606,6 +630,11 @@
     printTitle = document.title;
     document.title = "Varsha weekly sales review " + rangeText(current.model.range);
     document.body.classList.add("print-report");
+    if (!document.getElementById("repPageStyle")) {
+      var st = el("style", { id: "repPageStyle" });
+      st.textContent = "@page { size: A4; margin: 0; }";
+      document.head.appendChild(st);
+    }
     window.addEventListener("afterprint", endPrint, { once: true });
     try { window.print(); } catch (e) { warn("print failed", e); endPrint(); }
   }

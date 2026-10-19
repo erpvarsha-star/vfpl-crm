@@ -81,7 +81,6 @@ dialog.report::backdrop { background: rgba(9, 22, 41, .6); }
 }
 
 /* ---------- print: only the sheet, exactly one A4 page ---------- */
-@page report { size: A4; margin: 0; }
 @media print {
   body.print-report { background: #fff; }
   body.print-report > *:not(#reportDlg) { display: none !important; }
@@ -92,7 +91,7 @@ dialog.report::backdrop { background: rgba(9, 22, 41, .6); }
   body.print-report .no-print { display: none !important; }
   body.print-report .rp-scroll { overflow: visible; padding: 0; }
   body.print-report #reportPage {
-    page: report; width: 210mm; height: 297mm; min-height: 0; margin: 0; box-shadow: none; overflow: hidden;
+    width: 210mm; height: 297mm; min-height: 0; margin: 0; box-shadow: none; overflow: hidden;
     break-after: avoid; break-inside: avoid;
   }
 }

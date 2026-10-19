@@ -159,7 +159,13 @@ module.exports = async (t) => {
   check('report-unit: 12 overdue gives 8 items, total 12 and 4 more', mo.overdue.items.length === 8 && mo.overdue.total === 12 && mo.overdue.more === 4 && mo.headline.overdue === 12);
   const lowCaps = R.compute({}, Object.assign({}, manyOver, { caps: { overdue: 3 } }));
   check('report-unit: caps can be lowered (used to fit one page)', lowCaps.overdue.items.length === 3 && lowCaps.overdue.more === 9);
-  check('report-unit: capsAtLevel never goes below 3 and keeps 5 actions', R.capsAtLevel(8).moves === 3 && R.capsAtLevel(8).actions === 5 && R.capsAtLevel(0).moves === 8);
+  const trim = R.compute({}, Object.assign({}, manyOver, { rfqHistory: [], stats: { rfq: { total: 1, byStage: {}, quoteOverdue: 0 } } }));
+  const n1 = R.nextCaps(trim, R.DEFAULT_CAPS);
+  check('report-unit: nextCaps shortens the list that shows the most items by one, and leaves the rest', n1 && n1.overdue === 7 && n1.dueNext === R.DEFAULT_CAPS.dueNext && n1.actions === 5);
+  let guard = 0, cur = R.DEFAULT_CAPS, nxt;
+  while (guard++ < 100 && (nxt = R.nextCaps(R.compute({}, Object.assign({}, manyOver, { caps: cur })), cur))) cur = nxt;
+  check('report-unit: nextCaps stops at 3 items per list and never touches the 5 actions', cur.overdue === 3 && cur.actions === 5 && guard < 100);
+  check('report-unit: nextCaps returns null when nothing is longer than 3', R.nextCaps(R.compute({}, base()), { overdue: 3, dueNext: 3, moves: 3, atRisk: 3, names: 3, notes: 3, lateOrders: 3, moneyTop: 3, reactivate: 3, leadNames: 3, actions: 5 }) === null);
   const risk13 = base(); risk13.customers = []; for (let i = 0; i < 13; i++) risk13.customers.push(cust('r' + i, 'Risk ' + i, { status: 'At risk' }));
   const rk = R.compute({}, risk13).atRisk;
   check('report-unit: at-risk is capped at 10 with +3 more', rk.items.length === 10 && rk.total === 13 && rk.more === 3);
