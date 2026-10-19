@@ -1,6 +1,7 @@
 # Varsha CRM - Phase 2 design
 
 Date: 19 Oct 2026, 04:46 IST (revised the same day for scope updates 1, 2 and 3). Author: Opus design agent. Status: ready for the lead's review.
+**Addendum §12 (Leads tab, Hub RFQ import, dispatch history) wins over earlier sections where they differ.** Tabs: Dashboard · Customers · Leads · RFQs · Schedule · Export.
 First HTML review scope = the user's **"Owner's Path"**: everything in this doc marked stage A, about 48 hours of parallel Sonnet build. Items for after the first review are in §11 "Later".
 
 **Two stages**
@@ -1600,3 +1601,362 @@ One line each, with where it fits:
   - `vehicleSegments = [vehicleSegment]`;
   - adding "Other" to `SEGMENTS` (the review's list).
   These are additive, one-step migrations.
+
+---
+
+## 12. Addendum (19 Oct 2026): Leads tab, Hub RFQ import, dispatch history
+
+This section is **additions only**. §4 (frozen contracts), the A1 task and the file layout are unchanged. Where this section and an earlier one disagree, **this section wins**:
+- the tab list;
+- the orders CSV import (replaced by typed orders + dispatch history);
+- the scopes of A2–A8.
+
+Tabs are now: **Dashboard · Customers · Leads · RFQs · Schedule · Export** (ids `dash`, `list`, `leads`, `rfqs`, `schedule`, `export`). The tab still persists, and a first visit opens the Dashboard.
+
+### 12.1 Shell change for a new tab or module (task A1.1, made by A1 right after A1 merges; about 30 min)
+
+The goal: a module registers itself with `App.registerPanel(id, {...})` and `Store.col(name)` / `Store.doc(name)`. The only shell edit is in `index.html`:
+```html
+<!-- in nav.tabs, between #tab-list and #tab-rfqs -->
+<button role="tab" id="tab-leads" aria-controls="panel-leads" aria-selected="false" tabindex="-1">Leads</button>
+<!-- with the other panels -->
+<section id="panel-leads" role="tabpanel" aria-labelledby="tab-leads" hidden></section>
+<!-- head --> <link rel="stylesheet" href="css/leads.css?v=2">
+<!-- scripts, after customers.js --> <script src="js/leads.js?v=2" defer></script>
+```
+A1.1 also checks four things, and fixes any that do not hold in A1's build (additive only):
+1. `App.registerPanel` accepts any id that has a matching `#panel-<id>`. No hard-coded list of 5; if A1 built one, add `leads`. The tab keyboard order reads the DOM.
+2. `Store.col(name)` accepts the new collections **`leads`, `dispatches`**, and `Store.doc(name)` the new docs **`lead_staging`, `dispatch_meta`, `internal_entities`**. Register them if A1 used a fixed list.
+3. Two additive Store methods for lead touches in the same call log:
+   - `Store.addLeadLog(leadId, {at, type, note}) -> Promise<Result & {entry}>` stores a log row with `customer_id: null, lead_id`.
+   - `Store.relinkLog(leadId, customerId) -> Promise<Result>` runs on conversion.
+   - `allLog()` includes lead rows; `listLog(customerId)`, `logCount` and `lastContacted` ignore them.
+   - `Store.leadLog(leadId)` lists them, newest first.
+4. `js/leads.js` and `css/leads.css` stubs (placeholder panel). The `10-shell` check `tab order is Dashboard, Customers, RFQs, Schedule, Export` becomes **`tab order is Dashboard, Customers, Leads, RFQs, Schedule, Export`**, plus **`Leads panel stub mounts`**.
+
+Stage B note: `call_log.customer_id` becomes nullable, with `lead_id uuid references leads(id)` and `check (customer_id is not null or lead_id is not null)`.
+
+### 12.2 Leads (P2-N; new task **A9**, owns `js/leads.js`, `css/leads.css`, `tests/checks/55-leads.js`, `tests/unit/leads-unit.js`)
+
+**Record**, collection `leads`. All fields are optional except `company`. **Leads are localStorage only and never in git.**
+```
+{ id /* uuid */, company, company_key /* leadKey(company) */, contact_name, email /* private */, phone /* private */,
+  region_program, scope /* component requirement */, segment_domain, last_contact /* date */, context /* ≤ 2000 */,
+  value_angle /* ≤ 1000 */, strategy /* recommended strategy / next step, ≤ 1000 */, next_follow_up /* date */,
+  bucket /* "A"|"B"|"C"|"D"|"dormant"|"jv"|"" */, action_category /* one of ACTION_CATEGORIES or "" */,
+  bucket_guessed: boolean, priority /* ""|"High"|"Medium"|"Low" */,
+  fit /* ""|"sweet"|"check"|"regret" (set by hand only) */, source /* "Manual" | sheet label */,
+  sources: [{ sheet, ref, importedAt }], status /* "Open"|"Converted"|"Closed" */, closed_reason,
+  converted_customer_id, converted_rfq_ids: [], created_at, updated_at }
+BUCKETS = { A: "No response: awaiting them", B: "Response pending from our side", C: "Negative / shelved / stalled: re-pitch",
+            D: "Stalled cold-call list", dormant: "Dormant > 6 months (re-engage)", jv: "JV & strategic partnership" }
+ACTION_CATEGORIES = ["Action Pending (Urgent)", "No Response (Awaiting Data)", "Dormant >6 Mo (High Value)",
+                     "JV & Strategic Partnership", "No Positive / Stalled", "Mismatched / Cold"]
+CATEGORY_TO_BUCKET = { "Action Pending (Urgent)": "B", "No Response (Awaiting Data)": "A", "Dormant >6 Mo (High Value)": "dormant",
+                       "JV & Strategic Partnership": "jv", "No Positive / Stalled": "C", "Mismatched / Cold": "D" }   // only to suggest, flagged guessed
+leadKey(n) = Store.nameKey(n) with these trailing tokens removed repeatedly:
+             pvtltd, privateltd, ltd, limited, inc, llc, llp, gmbh, coltd, co, corp, india
+```
+- **Dormant (computed):** an open lead whose `last_contact` is empty or ≥ 183 days before IST today, **or** whose `bucket === "dormant"`. It shows a badge "Dormant 8 months" (text).
+- **Internal entities, excluded from Leads** (the user's rule; these are related parties):
+  - Doc `internal_entities` holds patterns, default `["varsha", "kctr", "prima ft", "scm maxility", "tng korea"]`, matched case-insensitively against the company and the contact's email domain.
+  - The Varsha team and the executive assistant are caught by "varsha", or by a domain the user adds to the list.
+  - Matching rows are skipped at import with the reason "internal / related entity". Manual add or edit is refused: "<name> is an internal or related company and is not tracked as a lead."
+  - The list is editable in Leads › "Internal entities" (a small dialog).
+- **Already a customer:** a lead whose `company_key` matches a customer (`Store.matchCustomer`) defaults to **Skip** at import ("already a customer"), with the choices "Save as a note on the customer" and "Import as lead anyway".
+- **Fit badge** (manual only, never computed). The select options and the hint text:
+  - "Sweet spot: closed-die forgings about 2.5–25 kg (3-ton hammer)"
+  - "Check fit"
+  - "Fast regret: parts under 1 kg, sheet metal or investment castings"
+  - "Not checked"
+  The badge is neutral navy for sweet and check, grey for regret (text carries the meaning).
+
+**Leads tab UI** (`leads.js`):
+- Toolbar: "+ New lead" `#leadNew`, "Import leads" `#leadImport`, "Internal entities", search `#leadQ` (company, contact name, scope, segment, region).
+- Bucket chips with counts: All / A / B / C / D / Dormant > 6 mo / JV / Not set. Also an action-category select, a fit select, chips "Follow-up overdue (n)" (red text) / "Due today (n)" / "Touched in last 7 days (n)", and "Show converted / closed".
+- All filters persist in `panels.leads`.
+- **Table** (cards at ≤ 860px):
+  - Company (+ fit and dormant badges);
+  - Key contact: name, plus "Email" / "Call" buttons (`mailto:` / `tel:`) when present. The address is shown in the button title only.
+  - Segment / domain · Scope · Region / program · Last contact ("12 Mar 2026 · 7 months ago") · Bucket · Action category;
+  - Next follow-up (`<input type=date>`; overdue = red "Overdue by N days", today = orange "Due today", the same rule as customers);
+  - Actions: **Log touch**, **Edit**, **Convert ▾** (to customer / to RFQ), **Close**.
+  - Default sort: overdue follow-ups first, then next follow-up ascending, then company.
+- **Lead dialog** `#leadDlg`: every field. Bucket and category are selects; choosing a category with an empty bucket suggests the bucket. Errors in `#leadErr`.
+- **Log touch** `#touchDlg`:
+  - type Call / Email / Visit / Telegram / Note; date (default today, max today); note (≤ 500); "Next follow-up" (optional, min today).
+  - It calls `Store.addLeadLog`. `last_contact` = max `at` over the lead's log rows of type Call/Email/Visit/Telegram (a Note does not count, D6). It sets `next_follow_up` if given.
+  - The lead's history is shown in the dialog (newest first).
+- **Convert to customer:**
+  - Calls `CrmCustomers.openAdd(prefill, onSaved)`, an **additive optional argument for A2**.
+  - Prefill: `{ name: company, contact: contact_name, phone, segment: (segment_domain if it is exactly one of SEGMENTS, else "") }`.
+  - On save, `onSaved(customerId)` sets the lead to `status: "Converted"` and `converted_customer_id`, calls `Store.relinkLog(lead.id, customerId)`, and moves every RFQ with `lead_id === lead.id` to `customer_id = customerId`.
+- **Convert to RFQ:** calls `CrmRfq.openNew(null, { leadId, customerName: company, partName: scope })`, an **additive optional argument for A4**. The RFQ keeps `lead_id`; its customer shows as "Lead: <company>".
+
+**Lead imports** (via `CrmImport.open`, one file at a time, into a **staging** doc `lead_staging`; then a merge preview):
+
+| Spec (sheet) | Exact headers → lead field |
+|---|---|
+| `hub_dormant` (Hub "Dormant Leads (>6 Months)") | Lead ID→sources.ref · Organization→company · Segment / Domain→segment_domain · Key Contact & Email→contact_name + email (email = first `/[^\s<>()]+@[^\s<>()]+\.[a-z]{2,}/i`, the rest trimmed = name) · Date of Last Contact→last_contact · Historical Context→context · Value Proposition / Angle→value_angle · Recommended Outreach Action→strategy. Bucket default `dormant`, category "Dormant >6 Mo (High Value)", both guessed |
+| `reengage` ("Dormant Re-Engagement (>6M)") | Company · Contact→contact_name (+ email if present) · Requirement→scope · Last Date→last_contact · Status→context ("Status: …") · Re-engagement Rationale→value_angle · Action Plan→strategy. Bucket `dormant` (guessed) |
+| `pending` ("Pending & Follow-Up Tracker") | Company · Contact · Thread ID→sources.ref · Date→last_contact · Status→context + bucket rule below · Scope→scope |
+| `dormant_old` ("Dormant Leads (>6M)") | Customer / Company→company · Key Contact→contact_name · Email / Phone→email + phone (phone = `/\+?\d[\d\s-]{8,}\d/`) · Component / Scope→scope · Last Interaction Date→last_contact · Past Status→context · Outreach / Cold Call Strategy→strategy. Bucket `dormant` (guessed) |
+| `recent` ("Recent Status & Pending") | Category→action_category (fuzzy-matched to ACTION_CATEGORIES by `normHeader`, else added to context) · Counterparty / Entity→company · Contact / Sender→contact_name (+ email) · Subject / Key Requirement→scope · Interaction Date→last_contact · Urgency→priority (High/Medium/Low by keyword) · Action Required / Next Step→strategy. Bucket from CATEGORY_TO_BUCKET (guessed) |
+
+- Required columns per spec: the company column and at least one of the date or status columns. Others are optional.
+- Dates: ISO in the Hub; older trackers may differ (`parseDate`, day-first). **For leads, a date that will not parse is not a blocking error**: the original text goes into `context` ("Last contact (text): …") and the preview warns.
+- **Bucket rule from status text** (`pending` and `reengage`; first match wins):
+  - `/awaiting|no response|no reply|follow.?up sent|reminder sent/i` → A
+  - `/pending (from )?(us|our|internal)|to send|to prepare|to quote|we owe/i` → B
+  - `/regret|declin|negative|shelved|stalled|on hold|not interested/i` → C
+  - `/cold call|cold/i` → D
+  - `/jv|joint venture|partnership|strategic/i` → jv
+  Every result is flagged guessed.
+- **Staging:** after each file, a summary "38 rows staged from 3 files (2 internal skipped)", with "Add another file" / "Review and merge" / "Discard staged rows".
+
+**Merge preview** `#leadMergeDlg`: there are about 20 distinct companies across the five sheets.
+- Rows are grouped by `company_key` across all staged files **and existing leads**. One card per company shows the source labels ("Hub Dormant · Pending tracker") and a field-by-field merge. Each field with more than one distinct value has radio choices.
+- Defaults:
+  - dated fields come from the row with the **newest** `last_contact`;
+  - `context` and `strategy` join the distinct values newest first with " | " (≤ 2000);
+  - contact, email and phone take the first non-empty value, with others appended to context ("Other contacts: …");
+  - for an existing lead, its current non-empty values win;
+  - `sources` are the union.
+- Per card: "Include" (default on), "These are different companies" (splits into one lead per distinct original name), and "Match to customer instead" (a select; this turns the rows into notes on that customer).
+- Preview filters: "Needs attention" (guessed bucket, unparsed date, more than one value for a field).
+- Confirm: "Create 14 leads, update 3". Re-importing the same sheet updates by `sources.ref` (or by `company_key`), with no duplicates.
+
+**Contract** (`window.CrmLeads`), additive:
+```js
+CrmLeads = {
+  BUCKETS, ACTION_CATEGORIES, leadKey(name),
+  match(name): leadId | null,                          // by leadKey; used by the Hub RFQ import
+  createFromImport(f: {company, contact_name?, email?, scope?, last_contact?, source}): Promise<Result & {id}>,
+  isInternal(nameOrEmail): boolean,
+  stats(today): { open, byBucket: { A, B, C, D, dormant, jv, none }, dormant, followOverdue, followToday, touched7, converted30,
+                  reactivate: [{ id, company, lastContact, category }] /* top dormant: "Dormant >6 Mo (High Value)" first, then oldest */ },
+  openNew(prefill?), openEdit(id), visible(): Lead[], summary(): string
+};
+// leads filter: { bucket?: key|"none", category?, fit?, flag?: "dormant"|"overdue"|"today"|"touched7", q?, showClosed?: boolean }
+```
+
+### 12.3 RFQs: first data from the Hub sheet (A4 addition; A4 also owns `tests/unit/hub-unit.js`)
+
+**Source:** "Executive Inbox & Customer Intelligence Hub", two tabs, exact headers, ISO dates:
+- `hub_action` "Action Pending (Internal)": Item ID, Priority, Category, Subject / Matter, Counterparty / Organization, Delegated To, Action Required, Date Received, Target Due Date, Status.
+- `hub_awaiting` "Awaiting Customer Response": Tracking ID, Category, Account / Counterparty, Contact Email / Reference, Outreach Date, Last Follow-up Date, Follow-up Count, Expected Deliverable, Status.
+
+`CrmImport.open` parses and types the rows (no customer matching inside it: `customerField: null`). `rfqs.js` then classifies them and opens its own **review screen** `#hubReviewDlg`. Nothing is written until the user accepts.
+
+**Additive RFQ fields** (generic collection, so no Store change):
+`source_ref {sheet, id}`, `priority`, `waiting_on` ("us" for Action Pending, "customer" for Awaiting), `contact_ref` (private; localStorage only, never exported unless ticked), `followup_count`, `last_touch`, `delegated_to`, `stage_source` ("rule"|"user"|"guess"), `customer_guessed`, `lead_id`.
+
+**Classification.** It runs on `text` = the lowercase join of **all** text cells (Category, Subject / Matter, Action Required or Expected Deliverable, Status), because Category and Status often repeat each other and values can be shifted between columns:
+- **RFQ:** `/\brfq\b|enquir|inquir|quot(e|ation)|drawing|feasibilit|sample|ppap|\bpo\b|purchase order|costing|price|negotiat|develop|new part/`.
+- **Other (not an RFQ):** `/invoice|payment|debit|credit note|tooling (invoice|payment)|gst|statutory|audit|salary|visa|minutes|governance|jv\b/` **without** `\brfq\b`. Example: a tooling invoice request is "Other".
+- **Internal:** the counterparty or text matches `CrmLeads.isInternal` (or the related-party customers).
+- Anything else is "Other".
+- Default action: RFQ → Import; Other → **Skip**, with the choices "Save as a note on the customer" (a call-log Note with Subject + Action Required) and "Import as RFQ"; Internal → Skip.
+
+**Stage rule** (first match, latest stage first):
+- PPAP `/ppap|psw/`
+- Sample `/sample|trial|first article|\bfai\b/`
+- PO `/\bpo\b|purchase order|order (received|placed)|\bloi\b/`
+- Finalised `/finali[sz]|price (agreed|approved)|approved|accepted|nominat/`
+- Negotiated `/negotiat|counter.?offer|revised (quote|price)|re-?quote|price discussion/`
+- Quoted `/quoted|quotation (sent|submitted|shared)|offer (sent|submitted)|awaiting (po|feedback|approval)/`
+- Received `/new rfq|rfq received|enquir|inquir|drawing received|feasibilit/`
+- **Lost** (a flag, combinable with any stage) `/\blost\b|regret|declined|not (interested|feasible)|dropped/`, with `lost_reason` = the matched phrase.
+- No match → **Received**, `stage_source: "guess"`, and the badge **"stage guessed"** on the card and in the table until the user changes the stage.
+- Priority: the Priority column, else "High" if the text has `high.?priority|urgent`.
+
+**Field mapping:**
+
+| RFQ field | Action Pending | Awaiting Customer Response |
+|---|---|---|
+| rfq_no / source_ref.id | Item ID | Tracking ID |
+| customer | Counterparty / Organization; if blank, the longest customer or lead name found inside Subject / Matter (`customer_guessed: true`) | Account / Counterparty |
+| part_name | Subject / Matter (≤ 120) | Expected Deliverable (≤ 120) |
+| received | Date Received | Outreach Date |
+| quote_due | Target Due Date (only while stage = Received) | — |
+| next_action | Target Due Date | — (not invented) |
+| last_touch / followup_count | — | Last Follow-up Date / Follow-up Count |
+| notes | Action Required · "Delegated to: …" · "Status: …" · "Category: …" (when different from Status) | "Status: …" · "Category: …" |
+| contact_ref | — | Contact Email / Reference (private) |
+| waiting_on | "us" | "customer" |
+
+**Counterparty matching:**
+1. `Store.matchCustomer` (customers, aliases);
+2. else `CrmLeads.match` → `lead_id` (badge "Lead");
+3. else the review offers "Pick customer" / "Pick lead" / **"Create lead"** (the default when the counterparty is not empty; it calls `CrmLeads.createFromImport` on accept) / "Keep as text".
+If `CrmLeads` is absent, step 2 is skipped and "Create lead" is hidden.
+
+**Duplicates on re-import:** the key is `source_ref.sheet + source_ref.id` (else `nameKey(counterparty) + received + nameKey(part_name)`). An existing RFQ:
+- has its sheet fields refreshed (part_name, notes, dates, last_touch, followup_count, contact_ref, priority);
+- **never** has a user-set stage, customer or lost flag overwritten (`stage_source === "user"`);
+- moves forward if a rule-derived stage is later than the current one (with history note "Hub import");
+- never moves backwards.
+The review shows "New 12 · Updated 5 · Unchanged 9".
+
+**Review screen** `#hubReviewDlg`:
+- One row per item (cards at ≤ 860px): Include checkbox · Kind (RFQ / Other / Internal) with an override select · ID · Counterparty → match select · Subject · Stage select (prefilled, "stage guessed" badge) · Lost checkbox + reason · Priority · New/Update tag.
+- Filter "Needs attention" (stage guessed, customer not matched, customer guessed, Kind = Other).
+- Summary: "34 rows: 18 RFQs (6 stage guessed, 4 customer not matched) · 12 other items (skipped) · 4 internal (skipped)".
+- Accept "Import 18 RFQs" writes history `{from: null, to: stage, note: "Hub import"}` and `stage_source: "rule"|"guess"`.
+- A later move by the user sets `stage_source: "user"`, which removes the badge.
+
+### 12.4 Schedule: dispatch history + typed upcoming orders (A5 change; replaces the orders CSV import)
+
+**(a) Dispatch history**: a read-only CSV import of a tidy file the lead makes from the factory dispatch-slip dump. Exact headers: **Date** (YYYY-MM-DD), **Customer**, **Part Code** (e.g. `VF1050`; soft-check `/^[A-Z]{1,4}\d{2,6}[A-Z0-9-]*$/i`, a warning only), **Quantity** (int; a bad value blocks), **Slip Type** (text).
+- Collection `dispatches`, **replaced** on each import: `{ id, date, customer_id /* or null */, source_name, part_code, qty, slip_type }`. Doc `dispatch_meta`: `{ fileName, fileDate, firstDate /* min */, lastDate /* max, never row order */, rows, slipTypes: [] }`.
+- Customer matching uses the shared unmatched / manual-match list (aliases).
+- **Excluded from the backup** (re-importable), never in git.
+- Schedule sub-tabs become **Visits & calls | Upcoming orders | Dispatch history** (persisted).
+- Dispatch history views (a segmented control, persisted):
+  - **By customer:** Customer · Last dispatch · Qty last 30 days · Qty last 90 days · Parts (distinct) · Slips. A row expands to that customer's parts.
+  - **By part:** Part code · Customers · Last dispatch · Qty 30 / 90 days · Total.
+  - **Month totals:** CSS bars of qty per month (last 12 months of data) with slip counts; clicking a bar filters the lists to that month.
+- Filters: customer and part search, date range, **slip-type chips built from the data** (all on by default; Open Question 12.8-1), and "Measure from: today | last dispatch in the file". All persist in `panels.schedule`.
+- "Data through <lastDate>" (orange text when > 14 days old). "Clear dispatch history" with confirm.
+- **Customers tab** (A2, additive contract): `CrmSchedule.lastDispatch(customerId) -> date | ""`. It shows "Last dispatch 14 Oct 2026" under Last order (dim) and adds the sort key `dispatch`.
+- **Dashboard** (A3): the last-order recency card gets "Based on: last invoice | last dispatch" (persisted).
+
+**(b) Typed upcoming orders** (collection `orders`, now typed by the user and never imported). The new row shape (it replaces §2.6 OrderRow):
+```
+{ id, customer_id, order_no, part_code, part, qty /* int */, promised /* date */, status /* "Open"|"Dispatched"|"Cancelled" */,
+  dispatched /* date or null */, note /* ≤ 500 */, created_at, updated_at }
+```
+- `#orderDlg`: customer (datalist, must match), PO / order no, part code (datalist from that customer's dispatch part codes, free text allowed), part description, qty, promised date, status, dispatched date (required when Dispatched), note.
+- State words: Open and `promised < today` → **red "Late by N days"**; today → orange "Due today"; ≤ 7 days → "Due in N days"; Dispatched after promised → grey "Dispatched N days late"; Cancelled → grey "Cancelled".
+- **Hint, never automatic:** if dispatch history has the same customer + part code on or after the order's creation date, with qty ≥ the order qty, the row shows the button "Looks dispatched on 14 Oct: mark dispatched?".
+- Orders are included in the backup.
+- `orderStats(today)` keeps its §4.5 shape (`asOf: null`, `stale: false` for typed orders). New additive contract: `CrmSchedule.dispatchStats(today): null | { dataThrough, slips30, qty30, customers30, noDispatch90: [ids] }`, `CrmSchedule.lastDispatch(id)`, `CrmSchedule.clearDispatches()`. `clearOrders()` is no longer used by Export.
+
+### 12.5 Changes to the other tasks (additions to their owned files only)
+
+- **A2 (customers.js):**
+  - `CrmCustomers.openAdd(prefill?, onSaved?)` (additive optional arguments);
+  - the "Last dispatch" line + `dispatch` sort;
+  - filter `extra {kind:"ids"}` already covers dashboard dispatch links.
+- **A3 (dashboard.js):**
+  - **Leads card** (needs `CrmLeads`):
+    - tiles per bucket A / B / C / D / Dormant / JV → `App.show("leads", {bucket})`;
+    - "Dormant > 6 months N" → `{flag:"dormant"}`;
+    - "Lead follow-ups overdue N" (red text) → `{flag:"overdue"}`;
+    - "Touched in last 7 days N" → `{flag:"touched7"}`;
+    - "Reactivate next": the top 5 `reactivate` entries → `CrmLeads.openEdit(id)`;
+    - empty state "No leads yet. Import your lead trackers on the Leads tab.".
+  - **Orders card:** typed-order tiles as before, plus "Dispatched last 30 days: N slips · Q pcs" → `schedule {sub:"dispatch"}` and "No dispatch in 90 days: N customers" → `list {extra:{kind:"ids", value: noDispatch90, label:"No dispatch in 90 days"}}`.
+  - Recency "based on" toggle.
+- **A4 (rfqs.js):**
+  - Hub import + review (§12.3);
+  - `openNew(customerId?, opts? {leadId, customerName, partName})`;
+  - "Lead: <company>" display;
+  - "stage guessed" badge;
+  - the `waiting_on` chip filter ("Waiting on us / on customer").
+- **A5 (schedule.js, money.js):** §12.4. Remove the orders CSV import and its checks.
+- **A6 (export.js):**
+  - **Leads CSV** `#leadCsvBtn` (scope: shown in the Leads tab now / all leads). Columns: Company, Key contact, Region / program, Scope, Segment / domain, Last contact, Bucket, Action category, Strategy, Next follow-up, Fit, Source, Status.
+  - **Email and Phone columns only when "Include contact details (private)" is ticked.** That box is unticked on every load and never remembered. It also controls `contact_ref` in the RFQ CSV and the contact fields in the backup.
+  - The backup adds leads and lead log rows. Without the tick, it carries no email, phone or `contact_ref`, and the backup card says: "Without contact details, emails and phones are not in the file."
+  - Data card: leads count, dispatch "data through" + "Clear dispatch history".
+  - Remove "Clear imported orders".
+- **A8 (report.js):**
+  - New sections "Leads touched this week" (count + company names, from lead log rows in range), "Dormant leads to reactivate" (top 5 from `CrmLeads.stats().reactivate`) and "Lead follow-ups overdue" (count, red text).
+  - Top 5 actions: customer overdue follow-ups oldest first, then customer follow-ups due soonest, then **overdue lead follow-ups**.
+  - **No emails or phones anywhere in the report unless "Include contact details" is ticked** (a new checkbox, never remembered). This also drops the customer phone from "Top 5 actions" by default.
+
+### 12.6 Test checks for the new and changed work (exact names)
+
+**A1.1 · 10-shell** (changed): `tab order is Dashboard, Customers, Leads, RFQs, Schedule, Export`, `Leads panel stub mounts`, `lead log rows stay out of customer Last contacted` (store-unit).
+
+**A9 · 55-leads** + leads-unit (`leadKey` merges "Acme Forge Pvt Ltd" / "ACME FORGE PRIVATE LIMITED" / "Acme Forge India"; `isInternal`; the bucket rule; CATEGORY_TO_BUCKET; dormant computation; merge defaults):
+- `new lead is saved and survives a refresh`
+- `internal entities are refused` (company "KCTR Varsha", "Prima FT")
+- `bucket chips count and filter, and survive a refresh`
+- `action category and fit filters work`
+- `lead follow-up in the past is red and says "Overdue by N days"` / `due today is orange`
+- `dormant badge shows for last contact over 6 months`
+- `log touch adds to the call log and updates Last contact; a Note does not`
+- `Hub "Dormant Leads (>6 Months)" import recognises the exact headers`
+- `each of the four older tracker formats is recognised`
+- `"Key Contact & Email" is split into name and email`
+- `duplicates across files merge into one lead in the preview` (one company in 3 fixtures gives 1 card with 3 sources)
+- `"These are different companies" splits a merge card`
+- `re-import updates and does not duplicate`
+- `internal rows are skipped at import with the reason`
+- `a lead that is already a customer defaults to Skip`
+- *(needs A2)* `convert to customer opens Add prefilled and marks the lead Converted`, `converted lead's touches move to the customer`
+- *(needs A4)* `convert to RFQ creates an RFQ linked to the lead`
+- `contact email never appears in the customers.json export`
+- `no sideways scroll on the Leads tab and merge preview at 375px`
+- `lead text is shown as text, not HTML`
+
+**A4 · 50-rfqs** (added):
+- `Hub "Action Pending (Internal)" import recognises the exact headers`
+- `Hub "Awaiting Customer Response" import recognises the exact headers`
+- `"HIGH-PRIORITY NEW RFQ" becomes an RFQ at Received with priority High`
+- `a tooling invoice request is "Other" and skipped by default`
+- `stage words map to stages` (fixture rows for quoted, negotiation, PO, sample, PPAP)
+- `"regret" sets the Lost marker`
+- `unclear rows default to Received with "stage guessed"` / `moving the card removes "stage guessed"`
+- `blank counterparty is guessed from the subject and flagged`
+- `unknown counterparty can create a lead` *(needs A9)*
+- `review screen lets the user change stage and customer before import`
+- `re-import updates without duplicates and never overwrites a user-set stage`
+- `contact reference is stored but not in any export unless ticked`
+- `review screen fits at 375px without page scroll`
+
+**A5 · 60-schedule** (replaces the orders-import checks):
+- `dispatch history import recognises Date, Customer, Part Code, Quantity, Slip Type`
+- `"data through" uses the latest date even when rows are out of order`
+- `by-customer view shows last dispatch and 30/90-day quantities`
+- `by-part view and month totals add up to the file`
+- `slip-type chips filter and survive a refresh`
+- `unmatched dispatch customers can be matched by hand and are remembered`
+- `Clear dispatch history empties it after confirm`
+- `typed order is saved and survives a refresh`
+- `late typed order is red and says "Late by N days"`
+- `"looks dispatched" hint appears and marks dispatched only when clicked`
+- `Customers tab shows Last dispatch` *(with A2)*
+- `dispatch history is not in the backup; typed orders are`
+
+**A3 · 40-dashboard** (added):
+- *(needs A9)* `lead bucket tiles open the Leads tab with that bucket` (count = rows), `dormant tile opens dormant leads`, `overdue lead follow-ups tile is red and opens them`
+- *(needs A5)* `dispatched-last-30-days tile opens dispatch history`, `no-dispatch-in-90-days opens those customers`, `recency "based on last dispatch" changes the buckets and survives a refresh`
+
+**A6 · 30-export** (added):
+- `Leads CSV has the exact header and respects the Leads filter`
+- `no email or phone columns unless "Include contact details" is ticked`
+- `contact box is unticked after a refresh`
+- `backup has leads but no emails or phones unless ticked`
+
+**A8 · 80-report** (added):
+- `leads touched this week are listed by company`
+- `dormant leads to reactivate shows up to 5`
+- `report has no email or phone unless "Include contact details" is ticked`
+- `top 5 actions fall back to lead follow-ups`
+
+### 12.7 Updated task list and merge order
+
+| Task | Owns (unchanged unless noted) | New in this addendum |
+|---|---|---|
+| A1 | as §7 | none (it is building now) |
+| **A1.1** | `index.html`, `js/app.js`/`js/store.js` (only the 12.1 items), `js/leads.js` + `css/leads.css` stubs, `tests/checks/10-shell.js` | Leads tab entry, registries, `addLeadLog`/`relinkLog`/`leadLog` |
+| A2 | as §7 | `openAdd(prefill, onSaved)`, Last dispatch line |
+| A3 | as §7 | Leads card, dispatch tiles, recency "based on" |
+| A4 | as §7 + `tests/unit/hub-unit.js` | Hub import + review, lead links |
+| A5 | as §7 | dispatch history, typed orders (no orders import) |
+| A6 | as §7 | Leads CSV, contact-details box |
+| A7 | as §7 | none |
+| A8 | as §7 | leads sections, contact-details box |
+| **A9 Leads** | `js/leads.js`, `css/leads.css`, `tests/checks/55-leads.js`, `tests/unit/leads-unit.js` | whole Leads tab |
+
+Order: **A1 → A1.1 (about 30 min) → A2 ∥ A3 ∥ A4 ∥ A5 ∥ A6 ∥ A7 ∥ A8 ∥ A9 → merge in the order A2, A5, A9, A4, A7, A8, A3, A6** (full suite after each merge) **→ A6 `--strict` integration + README.** A9 and A4 depend on each other only through optional contracts (SKIP until both are merged).
+
+### 12.8 Open questions from this addendum (defaults are built; none blocks)
+1. **Slip types:** which "Slip Type" values count as a dispatch (for example, should returns or job-work slips be excluded)? *Default:* all count; the user can untick types with the chips.
+2. **Internal-entity list:** is `varsha, kctr, prima ft, scm maxility, tng korea` complete, and what is the executive assistant's email domain? *Default:* those five patterns, editable on the Leads tab.
+3. **Hub "Other" items** (invoices, governance): skip, or keep as notes on the customer? *Default:* skip, with a one-click "Save as a note".
+
+Later list: unchanged (§11). The Leads record leaves room for contacts with roles, owner and lead scoring later. They are additive fields or collections.
