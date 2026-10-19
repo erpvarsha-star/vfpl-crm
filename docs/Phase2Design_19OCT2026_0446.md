@@ -214,6 +214,7 @@ targets = { v: 1,
 ```
 - **Never stored:** `GSTIN` (CLAUDE.md rule 1), `CGST`, `SGST`, `IGST`, `TCS`, `Invoice Amount`, `PO No`, `Terms Days`, `Due Date`, `Source File`, `Match Method`, `Parser`, `Source File Id`. The importer keeps only the fields in the spec. A test checks that the fixture GSTIN is not anywhere in localStorage.
 - **Duplicates:** the same `Invoice No` + `Invoice Date` appearing twice keeps the first row and reports the count. Negative Taxable values (credit notes) are kept and summed.
+- **Order is not assumed.** The real file has out-of-order dates (e.g. a 30-May-26 invoice inside the 23-Jun block). "Data through" = the **max** invoice date in the file, `firstDate` = the **min**, and "last invoice" per customer (and "Update Last order") = the **max date per customer**. Never use the first or last row. The real file has 1,040 invoices from 01-Apr-26 to 12-Jul-26.
 - **India financial year:** `fyOf(iso)` gives `"2026-27"` for 1 Apr 2026 to 31 Mar 2027. Months run April to March.
 - **Revenue is in neither the backup nor `customers.json`** (it is re-imported from the sheet). **Targets are in the backup** (typed by the user, so they cannot be re-imported), with a "contains targets" line on the backup card.
 - Optional user action after an import: **"Update Last order from this file"**. For matched customers where the file's newest invoice date is later than `last`, it sets `last` through `Store.saveCustomer`. It is never automatic.
@@ -642,6 +643,8 @@ CrmReport = {
   - The importer's field spec gains **`pattern?: RegExp`**, tested on the trimmed original header (A1 adds it to `CrmImport` / `findHeader`).
   - Amount format: text with 3-digit commas (`1,234,567`), negatives with a leading minus, zeros as `"0"`. `parseAmount` covers all of these.
   - Recognition: a file with `ERP Overdue` + `1-30` is AGING; a file with `Estimated Live` is LIVE_POSITION.
+  - The real files each have 28 customers and an "As On" of 15-Oct-26. AGING "Printed Terms Days" is sometimes blank: blank is `null` and never an error.
+  - Do not assume row order; `asOf` uses the max "As On" date.
 
   `skipRow`: an empty customer cell, or one matching `/^(grand\s*)?total\b/i`, is skipped with the reason "total row" or "blank name".
 - `onConfirm` writes `Store.doc("money")` `{aging | live: {meta, rows}}` (the other file's part is kept) and `Store.setAliases(result.aliases)`.
@@ -666,7 +669,7 @@ CrmReport = {
 - Every other column (GSTIN, PO No, Terms Days, Invoice Amount, Due Date, Source File, CGST, SGST, IGST, TCS, Match Method, Parser, Source File Id) is **ignored and not stored**.
 - `skipRow`: a blank Invoice No, or a "Total" row.
 - The intro text says: "Export the INVOICE_REGISTER tab of the Collections sheet as CSV. **Revenue uses the Taxable column (before GST and TCS). Invoice Amount is not used.** The file is read in this browser only."
-- After Confirm, the result line reads "Data through 12 Jul 2026 · 1,200 invoices · 2 duplicates ignored". Then an optional button "Update Last order for 38 customers from this file" (§2.4b), and an optional button "Fill 9 blank groups from ERP Group". That second button only sets a customer's `group` when it is `""` and every invoice row for that customer has the same ERP Group. It is an explicit user action.
+- After Confirm, the result line reads "Data through 12 Jul 2026 · 1,040 invoices · 2 duplicates ignored". Then an optional button "Update Last order for 38 customers from this file" (§2.4b), and an optional button "Fill 9 blank groups from ERP Group". That second button only sets a customer's `group` when it is `""` and every invoice row for that customer has the same ERP Group. It is an explicit user action.
 - "Clear invoice data" (with confirm) is on the revenue card and on the Export data card.
 
 **Revenue card on the Dashboard** (section 2b, after Money). Needs `CrmRevenue.stats`; empty state below.
@@ -913,7 +916,7 @@ Sub-tabs (`role=tablist` inside the panel, persisted): **Visits & calls** (defau
 4. **Visits CSV** `#visitCsvBtn` (all): Date, Time, Type, Customer, Note, Done.
 5. **Send to Google Sheet automatically** `#autoBtn` (disabled, "Coming next"; design in §8.6).
 6. **Data in this browser** (`#dataCard`):
-   - counts of customers, notes, RFQs, visits, orders ("as of …"), money ("AGING as of …, LIVE_POSITION as of …"), invoices ("1,200 invoices, data through 12 Jul 2026"), targets ("FY 2026-27: 12 customers, 2 segments");
+   - counts of customers, notes, RFQs, visits, orders ("as of …"), money ("AGING as of …, LIVE_POSITION as of …"), invoices ("1,040 invoices, data through 12 Jul 2026"), targets ("FY 2026-27: 12 customers, 2 segments");
    - buttons "Clear imported money data" (→ `CrmMoney.clear("all")`), "Clear imported orders" (→ `CrmSchedule.clearOrders()`) and "Clear invoice data" (→ `CrmRevenue.clear()`), each with a confirm;
    - the note "To move everything to another browser, download the backup and import it there." **Backup import is out of scope for stage A** (stage B makes it unnecessary). The note says "Backup import comes with the shared database."
 7. `#exportMsg` (`role=status`).
