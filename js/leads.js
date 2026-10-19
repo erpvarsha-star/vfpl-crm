@@ -591,18 +591,33 @@
     out.reactivate = dorm.slice(0, 10).map(function (l) { return { id: l.id, company: l.company, lastContact: l.last_contact, category: l.action_category }; });
     return out;
   }
+  var PAGE = 25;
   var FILTER_FLAGS = ["dormant", "overdue", "today", "touched7"];
+  var FLAG_WORDS = { dormant: "dormant over 6 months", overdue: "follow-up overdue", today: "follow-up due today", touched7: "touched in the last 7 days" };
   var FILTER_FITS = ["sweet", "check", "regret", "none"];
   function cleanFilter(f) {
     f = f && typeof f === "object" ? f : {};
-    var out = { bucket: "", category: "", fit: "", flag: "", q: "", showClosed: false };
+    var out = { bucket: "", category: "", fit: "", flag: "", q: "", showClosed: false, limit: PAGE };
     if (f.bucket === "none" || BUCKET_KEYS.indexOf(f.bucket) !== -1) out.bucket = f.bucket;
     if (f.category === "none" || ACTION_CATEGORIES.indexOf(f.category) !== -1) out.category = f.category;
     if (FILTER_FITS.indexOf(f.fit) !== -1) out.fit = f.fit;
     if (FILTER_FLAGS.indexOf(f.flag) !== -1) out.flag = f.flag;
     if (typeof f.q === "string") out.q = f.q;
     out.showClosed = f.showClosed === true;
+    var n = Math.floor(Number(f.limit));
+    if (n >= PAGE && n <= 5000 && n % PAGE === 0) out.limit = n;
     return out;
+  }
+  /* Plain words for the filters in force, for the "Filtered:" line. Empty list = nothing is filtered. */
+  function describeFilters(flt) {
+    var w = [];
+    if (flt.bucket) w.push(flt.bucket === "none" ? "bucket not set" : "bucket " + (BUCKET_SHORT[flt.bucket] || flt.bucket));
+    if (flt.category) w.push(flt.category === "none" ? "no action category" : "action category " + flt.category);
+    if (flt.fit) w.push(flt.fit === "none" ? "fit not checked" : "fit " + FIT_SHORT[flt.fit]);
+    if (flt.flag) w.push(FLAG_WORDS[flt.flag]);
+    if (str(flt.q)) w.push('search "' + str(flt.q) + '"');
+    if (flt.showClosed) w.push("including converted and closed leads");
+    return w;
   }
   function passesFilter(l, flt, today, touch) {
     if (flt.bucket) { if (flt.bucket === "none" ? l.bucket : l.bucket !== flt.bucket) return false; }
@@ -655,7 +670,7 @@
       internalPatterns: internalPatterns, DEFAULT_INTERNAL: DEFAULT_INTERNAL, bucketFromStatus: bucketFromStatus, matchCategory: matchCategory,
       parseLeadDate: parseLeadDate, findDates: findDates, splitContact: splitContact, mapRow: mapRow, draftInternal: draftInternal, dormantInfo: dormantInfo,
       mergeGroup: mergeGroup, resolve: resolve, buildCards: buildCards, validateLead: validateLead, norm: norm, looksNotLead: looksNotLead,
-      SPEC_FIELDS: SPEC_FIELDS, SPEC_ORDER: SPEC_ORDER, SHEETS: SHEETS, fromMerge: fromMerge, newRecord: newRecord, cleanFilter: cleanFilter,
+      SPEC_FIELDS: SPEC_FIELDS, SPEC_ORDER: SPEC_ORDER, SHEETS: SHEETS, fromMerge: fromMerge, newRecord: newRecord, cleanFilter: cleanFilter, describeFilters: describeFilters, PAGE: PAGE,
       passesFilter: passesFilter, sortLeads: sortLeads, lastTouchMap: lastTouchMap, customerFor: customerFor, setCurrent: function (f) { current = cleanFilter(f); }
     }
   };
@@ -689,7 +704,26 @@
     var y = Math.floor(m / 12);
     return y + " years ago";
   }
-  function note(text, kind) { App.notice(text, kind || "info"); }
+  /* Messages from this tab show in the tab's own bar (with a dismiss button), so they do not follow the user to other tabs.
+     Errors still use the shared banner. */
+  var noteTimer = 0;
+  function note(text, kind) {
+    var b = rootEl ? $("leadNote") : null;
+    if (kind === "error" || !b) { App.notice(text, kind || "info"); return; }
+    b.querySelector(".banner-text").textContent = text;
+    b.hidden = false;
+    App.announce(text);
+    clearTimeout(noteTimer);
+    noteTimer = setTimeout(function () { b.hidden = true; }, 15000);
+  }
+  /* A message that must be seen on another tab (the Customers tab may open after a conversion): shared banner, cleared after a few seconds. */
+  function sharedNote(text) {
+    App.notice(text, "info");
+    setTimeout(function () {
+      var n = $("notice"), t = n && n.querySelector(".banner-text");
+      if (n && t && t.textContent === text) n.hidden = true;
+    }, 8000);
+  }
   function telHref(p) { return "tel:" + String(p).replace(/[^\d+]/g, ""); }
   function firstEmail(e) { var m = EMAIL_RE.exec(String(e || "")); return m ? cleanEmail(m[0]) : ""; }
 
@@ -810,13 +844,20 @@
     var today = S.todayISO(), touch = lastTouchMap(), links = rfqLinks();
     var base = allLeads().filter(function (l) { return state.showClosed || l.status === "Open"; });
     var list = sortLeads(base.filter(function (l) { return passesFilter(l, state, today, touch); }), today);
+    var shown = list.slice(0, state.limit), words = describeFilters(state);
 
     var body = $("leadRows");
     body.textContent = "";
-    list.forEach(function (l) { body.appendChild(buildRow(l, today, links)); });
+    shown.forEach(function (l) { body.appendChild(buildRow(l, today, links)); });
     var any = allLeads().length > 0;
-    $("leadEmpty").textContent = any ? "No leads match." : "No leads yet. Import your lead trackers or add a lead.";
+    $("leadEmptyText").textContent = any ? "No leads match" + (words.length ? " these filters: " + words.join(", ") + "." : ".") : "No leads yet. Import your lead trackers or add a lead.";
+    $("leadEmptyClear").hidden = !words.length;
     $("leadEmpty").hidden = list.length > 0;
+    $("leadFilterBar").hidden = !words.length;
+    if (words.length) $("leadFilterText").textContent = "Filtered: " + words.join(" · ");
+    var more = list.length - shown.length;
+    $("leadMoreWrap").hidden = more <= 0;
+    if (more > 0) $("leadMore").textContent = "Show " + Math.min(PAGE, more) + " more (" + more + " not shown)";
 
     var bc = { "": base.length, none: 0 };
     BUCKET_KEYS.forEach(function (k) { bc[k] = 0; });
@@ -844,7 +885,8 @@
       $("leadStageMsg").textContent = st.rows.length + " row" + (st.rows.length === 1 ? "" : "s") + " staged from " + st.files.length + " file" + (st.files.length === 1 ? "" : "s") +
         (internal ? " (" + internal + " internal skipped: internal / related entity)" : "") + ". Nothing becomes a lead until you review and merge.";
     }
-    $("leadFoot").textContent = summary();
+    $("leadFoot").textContent = "Showing " + shown.length + " of " + list.length + (list.length === 1 ? " lead" : " leads") +
+      (list.length !== base.length ? " that match the filters (" + base.length + " in total)" : "") + ".";
     saveState();
   }
 
@@ -1152,7 +1194,7 @@
       return Promise.all(moves);
     }).then(function () {
       App.announce(l.company + " is now a customer.");
-      note(l.company + " is now a customer. Its touches moved to the customer's notes.", "info");
+      sharedNote(l.company + " is now a customer. Its touches moved to the customer's notes.");
       App.flush();
     });
   }
@@ -1432,6 +1474,10 @@
     rootEl = root;
     loadState();
     var q = el("input", { class: "search", id: "leadQ", type: "search", placeholder: "Search company, contact, scope, segment, region", "aria-label": "Search leads" });
+    root.appendChild(el("div", { class: "banner info", id: "leadNote", hidden: true, role: "status" }, [
+      el("span", { class: "banner-text" }),
+      el("button", { class: "banner-x", type: "button", id: "leadNoteX", "aria-label": "Dismiss message", text: "×" })
+    ]));
     root.appendChild(el("div", { class: "bar ltools" }, [
       el("button", { type: "button", class: "btn primary", id: "leadNew", text: "+ New lead" }),
       el("button", { type: "button", class: "btn", id: "leadImport", text: "Import leads" }),
@@ -1458,6 +1504,10 @@
       el("button", { type: "button", class: "chip", id: "leadClosedToggle", "aria-pressed": "false", text: "Show converted / closed" })
     ]));
     root.appendChild(el("p", { class: "rule", id: "leadLegend", text: "A: " + BUCKETS.A + ". B: " + BUCKETS.B + ". C: " + BUCKETS.C + ". D: " + BUCKETS.D + ". A follow-up date in the past turns red and says how many days overdue. Leads are kept in this browser only." }));
+    root.appendChild(el("div", { class: "lfilter", id: "leadFilterBar", hidden: true, role: "status" }, [
+      el("span", { id: "leadFilterText" }),
+      el("button", { type: "button", class: "btn-sm", id: "leadClear", text: "Clear filters" })
+    ]));
     root.appendChild(el("div", { class: "banner info lstage", id: "leadStaging", hidden: true }, [
       el("span", { class: "banner-text", id: "leadStageMsg" }),
       el("button", { type: "button", class: "btn", id: "leadStageAdd", text: "Add another file" }),
@@ -1470,8 +1520,12 @@
         el("thead", null, el("tr", null, [th("Company"), th("Key contact"), th("Segment / domain"), th("Scope"), th("Region / program"), th("Last contact"), th("Bucket"), th("Action category"), th("Next follow-up"), th("")])),
         el("tbody", { id: "leadRows" })
       ]),
-      el("div", { class: "empty", id: "leadEmpty", hidden: true })
+      el("div", { class: "empty", id: "leadEmpty", hidden: true }, [
+        el("p", { id: "leadEmptyText" }),
+        el("button", { type: "button", class: "btn", id: "leadEmptyClear", text: "Clear filters" })
+      ])
     ]));
+    root.appendChild(el("div", { class: "lmore", id: "leadMoreWrap", hidden: true }, [el("button", { type: "button", class: "btn", id: "leadMore", text: "Show more" })]));
     root.appendChild(el("p", { class: "foot", id: "leadFoot" }));
 
     $("leadNew").addEventListener("click", function (e) { openNewDialog(null, e.currentTarget); });
@@ -1484,12 +1538,23 @@
       if (!confirm("Discard " + n + " staged row" + (n === 1 ? "" : "s") + "? Nothing has been added to your leads.")) return;
       S.doc("lead_staging").clear(); App.flush(); App.announce("Staged rows discarded.");
     });
-    q.addEventListener("input", function () { state.q = q.value; current = state; render(); });
-    root.querySelectorAll(".chip[data-b]").forEach(function (b) { b.addEventListener("click", function () { state.bucket = b.dataset.b; render(); }); });
-    root.querySelectorAll(".chip[data-flag]").forEach(function (b) { b.addEventListener("click", function () { state.flag = state.flag === b.dataset.flag ? "" : b.dataset.flag; render(); }); });
-    catSel.addEventListener("change", function () { state.category = catSel.value; render(); });
-    fitSel.addEventListener("change", function () { state.fit = fitSel.value; render(); });
-    $("leadClosedToggle").addEventListener("click", function () { state.showClosed = !state.showClosed; render(); });
+    function clearFilters() {
+      state = cleanFilter(null); current = state; q.value = "";
+      render();
+      App.announce("Filters cleared. Showing all open leads.");
+      var first = root.querySelector('.chip[data-b=""]');
+      if (first) first.focus();
+    }
+    $("leadClear").addEventListener("click", clearFilters);
+    $("leadEmptyClear").addEventListener("click", clearFilters);
+    $("leadNoteX").addEventListener("click", function () { $("leadNote").hidden = true; });
+    $("leadMore").addEventListener("click", function () { state.limit += PAGE; render(); App.announce($("leadFoot").textContent); });
+    q.addEventListener("input", function () { state.q = q.value; state.limit = PAGE; current = state; render(); });
+    root.querySelectorAll(".chip[data-b]").forEach(function (b) { b.addEventListener("click", function () { state.bucket = b.dataset.b; state.limit = PAGE; render(); }); });
+    root.querySelectorAll(".chip[data-flag]").forEach(function (b) { b.addEventListener("click", function () { state.flag = state.flag === b.dataset.flag ? "" : b.dataset.flag; state.limit = PAGE; render(); }); });
+    catSel.addEventListener("change", function () { state.category = catSel.value; state.limit = PAGE; render(); });
+    fitSel.addEventListener("change", function () { state.fit = fitSel.value; state.limit = PAGE; render(); });
+    $("leadClosedToggle").addEventListener("click", function () { state.showClosed = !state.showClosed; state.limit = PAGE; render(); });
     document.addEventListener("click", function (e) {
       Array.prototype.forEach.call(document.querySelectorAll("details.l-conv[open]"), function (dt) { if (!dt.contains(e.target)) dt.open = false; });
     });
