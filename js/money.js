@@ -419,12 +419,24 @@
     card.appendChild(wrap);
   }
 
-  function drawUnmatched(card, st) {
+  /* The unmatched names. In the card it is a collapsed one-line summary (state remembered); in the dialog it is always open. */
+  function drawUnmatched(card, st, forceOpen) {
     var open = st.unmatched.list.filter(function (e) { return !e.ignored; });
     var not = st.unmatched.list.length - open.length;
     if (!open.length && !not) return;
-    var wrap = el("div", { class: "mny-unm" }, [el("h3", { text: "Names not matched to a customer" })]);
-    if (open.length) {
+    var wrap = el("div", { class: "mny-unm" });
+    var isOpen = forceOpen === true || (App.view("moneycard").unm === true);
+    if (forceOpen !== true && open.length) {
+      var tog = el("button", { type: "button", class: "mny-unmtog", id: "mnyUnmToggle", "aria-expanded": String(isOpen) }, [
+        el("span", { class: "mny-caret", "aria-hidden": "true", text: isOpen ? "▾" : "▸" }),
+        open.length + (open.length === 1 ? " name" : " names") + " not matched to customers · ",
+        Ui.amountEl(open.reduce(function (sum, e) { return sum + num(e.overdue != null ? e.overdue : e.outstanding); }, 0)),
+        " · ", el("span", { class: "mny-link", text: isOpen ? "Hide" : "Review" })
+      ]);
+      tog.addEventListener("click", function () { App.setView("moneycard", { unm: !isOpen }); drawAll(); });
+      wrap.appendChild(tog);
+    } else wrap.appendChild(el("h3", { text: "Names not matched to a customer" }));
+    if (open.length && isOpen) {
       wrap.appendChild(el("p", { class: "note", text: "These rows are in the totals but not on any customer. Pick the customer; the choice is remembered for the next import." }));
       var ul = el("ul", { class: "mny-unmlist" });
       var custs = Store.customers().slice().sort(function (a, b) { return a.name.toLowerCase().localeCompare(b.name.toLowerCase()); });
@@ -445,7 +457,7 @@
       });
       wrap.appendChild(ul);
     }
-    if (not) wrap.appendChild(el("p", { class: "note", text: not + (not === 1 ? " name is" : " names are") + " marked as not a CRM customer; still counted in the totals." }));
+    if (not && (isOpen || !open.length)) wrap.appendChild(el("p", { class: "note", text: not + (not === 1 ? " name is" : " names are") + " marked as not a CRM customer; still counted in the totals." }));
     card.appendChild(wrap);
   }
 
@@ -500,7 +512,7 @@
     var st = stats();
     if (!st) { unmBody.appendChild(el("p", { class: "note", text: "No money data is imported." })); return; }
     var before = unmBody.childNodes.length;
-    drawUnmatched(unmBody, st);
+    drawUnmatched(unmBody, st, true);
     if (unmBody.childNodes.length === before) unmBody.appendChild(el("p", { class: "note", id: "mnyUnmNone", text: "Every name in the imported files is matched to a customer." }));
   }
   function openUnmatched() {
