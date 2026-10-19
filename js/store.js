@@ -21,7 +21,11 @@
   /* ---------- registries (open lists) ---------- */
   // collections: name -> { backup: include in the backup under "extra" (built-ins keep their named keys) }
   var collections = {
-    rfqs: { backup: true }, rfq_history: { backup: true }, visits: { backup: true }, orders: { backup: true }
+    rfqs: { backup: true }, rfq_history: { backup: true }, visits: { backup: true }, orders: { backup: true },
+    // Leads (design 12): localStorage only; not in the backup by default (they hold emails and phones: the Export task adds them behind its contact-details box)
+    leads: { backup: false },
+    // Dispatch history (design 12.4): replaced on each import, never in the backup
+    dispatches: { backup: false }
   };
   // docs: name -> { key: localStorage key (null = lives inside localdb), backup, imported (dataset the Export tab can clear) }
   var docs = {
@@ -29,7 +33,10 @@
     aliases: { key: "varsha-crm-aliases-v1", backup: false, imported: false },
     revenue: { key: "varsha-crm-revenue-v1", backup: false, imported: true },
     targets: { key: "varsha-crm-targets-v1", backup: true, imported: false },
-    orders_meta: { key: null, backup: true, imported: true }
+    orders_meta: { key: null, backup: true, imported: true },
+    lead_staging: { key: "varsha-crm-lead-staging-v1", backup: false, imported: false },
+    dispatch_meta: { key: "varsha-crm-dispatch-meta-v1", backup: false, imported: true },
+    internal_entities: { key: "varsha-crm-internal-entities-v1", backup: true, imported: false }
   };
   function checkName(name) {
     if (!NAME_OK.test(String(name))) throw new Error("Bad name: " + name);
@@ -369,7 +376,7 @@
 
   /* ---------- call log ---------- */
   function logUI(l) {
-    return { id: l.id, customerId: l.customer_id, at: l.at, type: l.type, note: l.note, doneFollowUp: !!l.done_follow_up,
+    return { id: l.id, customerId: l.customer_id || "", leadId: l.lead_id || "", at: l.at, type: l.type, note: l.note, doneFollowUp: !!l.done_follow_up,
              nextFollowUp: l.next_follow_up || "", createdAt: l.created_at };
   }
   function cmpLog(a, b) { return (b.at.localeCompare(a.at)) || (b.created_at.localeCompare(a.created_at)); }
@@ -401,6 +408,25 @@
     db.log.push(entry);
     persist(); emit("log");
     return ok({ entry: logUI(entry) });
+  }
+  /* Lead touches share the call log: rows with customer_id null and lead_id set (design 12.1). */
+  function addLeadLog(leadId, f) {
+    if (!leadId || !col("leads").get(leadId)) return fail("That lead no longer exists.");
+    var c = checkLogFields(f || {}, true);
+    if (c.error) return fail(c.error, c.field);
+    var entry = { id: uuid(), customer_id: null, lead_id: leadId, at: c.at, type: c.type, note: c.note, done_follow_up: false, next_follow_up: "", created_at: nowISO(), created_by: "" };
+    db.log.push(entry);
+    persist(); emit("log");
+    return ok({ entry: logUI(entry) });
+  }
+  function leadLog(leadId) { return db.log.filter(function (l) { return l.lead_id === leadId; }).sort(cmpLog).map(logUI); }
+  /* On conversion: the lead's touches become the customer's (they keep lead_id for history). */
+  function relinkLog(leadId, customerId) {
+    if (!rowById(customerId)) return fail("That customer no longer exists.");
+    var n = 0;
+    db.log.forEach(function (l) { if (l.lead_id === leadId && l.customer_id !== customerId) { l.customer_id = customerId; n++; } });
+    persist(); emit("log");
+    return ok({ moved: n });
   }
   function markDone(id, f) {
     var r = rowById(id);
@@ -748,7 +774,7 @@
     setStatus: setStatus, setFollowUp: setFollowUp, groups: groups, SEGMENTS: SEGMENTS, VEHICLE_SEGMENTS: VEHICLE_SEGMENTS,
     STATUSES: STATUSES, LOG_TYPES: LOG_TYPES, CONTACT_TYPES: CONTACT_TYPES,
     removeCustomer: removeCustomer, refs: refs, validate: validate,
-    listLog: listLog, allLog: allLog, logCount: logCount, lastContacted: lastContacted, addLog: addLog, markDone: markDone,
+    listLog: listLog, allLog: allLog, addLeadLog: addLeadLog, leadLog: leadLog, relinkLog: relinkLog, logCount: logCount, lastContacted: lastContacted, addLog: addLog, markDone: markDone,
     col: col, doc: doc,
     registerCollection: registerCollection, registerDoc: registerDoc, importedDocs: importedDocs, docNames: docNames, collectionNames: collectionNames,
     exportCustomersJson: exportCustomersJson, exportBackup: exportBackup, unsavedCount: unsavedCount,
