@@ -61,7 +61,30 @@
     if (t) t.textContent = text;
     b.hidden = false;
   }
-  function notice(text, kind) { showBanner(kind === "error" ? "syncErr" : "notice", String(text)); }
+  /* Messages: kind "info" (default) shows in #notice and goes away by itself after NOTICE_MS; "warn" shows in #notice and stays
+     until dismissed; "error" shows in #syncErr (role=alert) and stays until dismissed. Info and warn messages are also cleared
+     when the user moves to another tab (a message posted in the last NOTICE_KEEP_MS before a switch survives it, so a flow that
+     says "Imported ..." and then opens another tab still shows it). Every message has a dismiss button. */
+  var NOTICE_MS = 12000, NOTICE_KEEP_MS = 1500;
+  var noticeTimer = 0, noticeAt = 0, noticeKind = "info";
+  function notice(text, kind) {
+    kind = kind === "error" ? "error" : kind === "warn" ? "warn" : "info";
+    var id = kind === "error" ? "syncErr" : "notice", b = banner(id);
+    showBanner(id, String(text));
+    if (kind === "error" || !b) return;
+    b.classList.toggle("info", kind === "info");
+    noticeAt = Date.now(); noticeKind = kind;
+    clearTimeout(noticeTimer);
+    if (kind === "info") noticeTimer = setTimeout(function () { b.hidden = true; }, NOTICE_MS);
+  }
+  function hideBanner(b) {
+    if (b.id === "notice") clearTimeout(noticeTimer);
+    b.hidden = true;
+  }
+  function clearNoticeOnSwitch() {
+    var b = banner("notice");
+    if (b && !b.hidden && Date.now() - noticeAt > NOTICE_KEEP_MS) hideBanner(b);
+  }
   function announce(text) {
     var l = $("live");
     if (!l) return;
@@ -161,7 +184,7 @@
 
   function show(id, filter, opts) {
     if (!tabEls[id]) return false;
-    var changed = active !== id;
+    var changed = active !== id, was = active;
     active = id;
     order.forEach(function (t) {
       var on = t === id;
@@ -176,6 +199,7 @@
     }
     renderActive();
     centreTab(id);
+    if (changed && was) clearNoticeOnSwitch();
     if (changed) {
       if (!opts || !opts.keepScroll) window.scrollTo(0, 0);
       announce((tabEls[id].textContent || id) + " tab");
@@ -205,7 +229,7 @@
     });
     nav.addEventListener("keydown", onTabKey);
     Array.prototype.forEach.call(document.querySelectorAll(".banner-x"), function (x) {
-      x.addEventListener("click", function () { var b = x.closest(".banner"); if (b) b.hidden = true; });
+      x.addEventListener("click", function () { var b = x.closest(".banner"); if (b) hideBanner(b); });
     });
     var add = $("openForm");
     if (add) add.addEventListener("click", function () { if (window.CrmCustomers && CrmCustomers.openAdd) CrmCustomers.openAdd(); });
@@ -246,6 +270,6 @@
     hideAmounts: hideAmounts, setHideAmounts: setHideAmounts,
     notice: notice, announce: announce, download: download,
     openDialog: Ui.openDialog, closeDialog: Ui.closeDialog, fmt: Ui.fmt,
-    tabs: function () { return order.slice(); }
+    tabs: function () { return order.slice(); }, NOTICE_MS: NOTICE_MS
   };
 })();

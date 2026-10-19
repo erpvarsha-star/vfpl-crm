@@ -90,6 +90,26 @@ module.exports = async (t) => {
   await page.click('#importCancel');
   check('Cancel closes without importing', await page.locator('#importDlg').evaluate(d => !d.open));
 
+  // the success notice: shows what was imported, goes away by itself, and does not follow the user to other tabs
+  await page.clock.install({ time: Date.now() });
+  await open();
+  await set('notice.csv', 'Customer,ERP Overdue,As On\nNR INDUSTRIES,10,14-Oct-26\n');
+  await page.waitForSelector('#importSummary li');
+  await page.click('#importOk');
+  await page.waitForFunction(() => window.__got);
+  check('the import notice says what was imported and has a dismiss button', /Imported 1 rows from AGING\. Data as of 14 Oct 2026\./.test(await page.locator('#notice').innerText()) && await page.locator('#notice .banner-x').isVisible());
+  await page.clock.fastForward(12500);
+  check('the import notice goes away by itself after 12 seconds', await page.locator('#notice').isHidden());
+  await open();
+  await set('notice2.csv', 'Customer,ERP Overdue\nNR INDUSTRIES,10\n');
+  await page.waitForSelector('#importSummary li');
+  await page.evaluate(() => { window.__got = null; });
+  await page.click('#importOk');
+  await page.waitForFunction(() => window.__got);
+  await page.clock.fastForward(3000);
+  await page.click('#tab-export');
+  check('the import notice is cleared when the user moves to another tab', await page.locator('#notice').isHidden());
+
   // dataset registry is open
   const reg = await page.evaluate(() => {
     CrmImport.register('demo_kind', { label: 'Demo', fields: [{ key: 'a', label: 'A', required: true, type: 'text' }] });
