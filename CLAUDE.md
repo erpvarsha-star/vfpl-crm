@@ -14,6 +14,13 @@ Independent project. Work only in this repo (`vfpl-crm`). Never touch `vfpl-dash
 8. **Safety**: build text with `textContent`, never `innerHTML`. Page must work at 375px wide with no sideways scroll.
 9. **Plan B**: if hosting is unavailable, run any static server on the folder; if storage is blocked, export the JSON.
 
+## Who does what (model roles)
+
+- **Opus designs.** Architecture, data model, security and UI specs are written by an Opus agent first.
+- **Sonnet agents build, read and deploy.** Every build, read (repo, sheet, database) and deploy task is done by a Sonnet agent that reports back to the lead.
+- **The lead checks.** The lead briefs each agent fully, then verifies the result (tests, diff, live check) before telling the user it is done. Agents do not push to `main` without the lead's check.
+- **Process per phase:** blueprint, the user's GO, design, build, test, deploy, then a short skill harvest (new gotchas go in the list below).
+
 ## Gotchas (learned the hard way)
 
 - CSS `display` on an element overrides the `hidden` attribute. Keep `[hidden] { display: none !important; }`.
