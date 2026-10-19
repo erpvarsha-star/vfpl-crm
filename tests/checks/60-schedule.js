@@ -424,9 +424,9 @@ module.exports = async (t) => {
   await dp.locator('.dslip', { hasText: 'Jobwork' }).click();
 
   // unmatched names matched by hand
-  check('unmatched dispatch customers are listed with a choice', (await dp.locator('#dispatchUnmatched li').count()) === 1 && /1 customer name is not matched/.test(await dp.locator('#dispatchUnmatched h3').innerText()));
+  check('unmatched dispatch customers are listed with a choice once the summary is opened', (await dp.locator('#dispatchUnmatched li').count()) === 0 && (await dp.locator('#dispatchUnmToggle').count()) === 1 && await (async () => { await dp.click('#dispatchUnmToggle'); return (await dp.locator('#dispatchUnmatched li').count()) === 1 && /^1 name not matched to customers/.test((await dp.locator('#dispatchUnmToggle').innerText()).replace(/^▾ ?/, '')); })());
   await dp.locator('#dispatchUnmatched select').selectOption('s-k-traders');
-  await dp.locator('#dispatchUnmatched button').click();
+  await dp.locator('#dispatchUnmList button').click();
   await settle(dp);
   check('unmatched dispatch customers can be matched by hand and are remembered',
     (await dp.locator('#dispatchUnmatched').isHidden()) && (await cells('s-k-traders'))[1] === human(dayOf(-60)) && (await dp.evaluate(() => CrmSchedule.lastDispatch('s-k-traders'))) === dayOf(-60) && (await dp.locator('#dispatchByCustomer .sch-nomatch').count()) === 0);
@@ -530,4 +530,71 @@ module.exports = async (t) => {
   await pp.click('#orderNew');
   const odl = await pp.evaluate(() => { const d = document.getElementById('orderDlg').getBoundingClientRect(); return { w: document.documentElement.scrollWidth, l: d.left, r: d.right, b: d.bottom, vh: innerHeight }; });
   check('no sideways scroll at 375px with the order dialog open', odl.w <= 375 && odl.l >= 0 && odl.r <= 375 && odl.b <= odl.vh + 1, JSON.stringify(odl));
+
+  // =========================================================================================
+  // Polish: header words, compact unmatched summary, plain match summary
+  // =========================================================================================
+  const pol = await t.fresh();
+  const pp2 = pol.page;
+  await t.open(pp2);
+  await goSchedule(pp2, 'dispatch');
+  const polSpec = spec.concat([[dayOf(-3), 'Second Imaginary Works', 'VX7000', 12, DISP], [dayOf(-4), 'Second Imaginary Works', 'VX7001', 20, JOB]]);
+  await importDispatch(pp2, csvOf(polSpec));
+
+  const matchLine = await pp2.locator('#dispatchMatch').innerText();
+  check('the dispatch summary says plainly how many of the customers in the file match', matchLine === '4 customers in this file: 2 matched to CRM customers, 2 not matched (3 slips).', matchLine);
+  check('the unmatched names are a collapsed summary line by default', /^▸ ?2 names not matched to customers · 3 slips · Review$/.test((await pp2.locator('#dispatchUnmToggle').innerText()).replace(/\s+/g, ' ')) && (await pp2.locator('#dispatchUnmToggle').getAttribute('aria-expanded')) === 'false' && (await pp2.locator('#dispatchUnmList').count()) === 0);
+  const topY = await pp2.evaluate(() => document.getElementById('dispatchByCustomer').getBoundingClientRect().top + scrollY);
+  check('the dispatch table starts near the top of the page, not below a list of cards', topY < 800, String(topY));
+  await pp2.click('#dispatchUnmToggle');
+  const dense = await pp2.evaluate(() => ({ rows: document.querySelectorAll('#dispatchUnmList li').length, h: document.querySelector('#dispatchUnmList li').getBoundingClientRect().height }));
+  check('opening the summary shows a dense list with a match control per name', dense.rows === 2 && dense.h < 70 && (await pp2.locator('#dispatchUnmList select').count()) === 2 && (await pp2.locator('#dispatchUnmToggle').getAttribute('aria-expanded')) === 'true', JSON.stringify(dense));
+  await t.reload(pp2);
+  await goSchedule(pp2);
+  check('the open state of the unmatched list survives a refresh', (await pp2.locator('#dispatchUnmList li').count()) === 2);
+  await pp2.click('#dispatchUnmToggle');
+  await t.reload(pp2);
+  await goSchedule(pp2);
+  check('the collapsed state survives a refresh too', (await pp2.locator('#dispatchUnmToggle').getAttribute('aria-expanded')) === 'false' && (await pp2.locator('#dispatchUnmList').count()) === 0);
+  await pp2.click('#dispatchUnmToggle');
+  await pp2.locator('#dispatchUnmList li', { hasText: 'Second Imaginary Works' }).locator('select').selectOption('nr-industries');
+  await pp2.locator('#dispatchUnmList li', { hasText: 'Second Imaginary Works' }).locator('button').click();
+  await settle(pp2);
+  check('matching one name updates the summary line and the count', (await pp2.locator('#dispatchMatch').innerText()) === '3 customers in this file: 2 matched to CRM customers, 1 not matched (1 slip).' && /^▾ ?1 name not matched/.test((await pp2.locator('#dispatchUnmToggle').innerText()).replace(/\s+/g, ' ')));
+
+  // header words never break, tables fit at every width
+  await pp2.click('#dv-customer');
+  const fitReport = {};
+  for (const w of [1280, 1180, 1000, 375]) {
+    await pp2.setViewportSize({ width: w, height: 900 });
+    for (const view of ['customer', 'part']) {
+      await pp2.click('#dv-' + view);
+      fitReport[w + view] = await pp2.evaluate((width) => {
+        const tbl = document.querySelector(view_sel());
+        function view_sel() { return document.getElementById('dispatchByCustomer') ? '#dispatchByCustomer' : '#dispatchByPart'; }
+        const heads = Array.from(tbl.querySelectorAll('thead th')).map(th => {
+          const cs = getComputedStyle(th), fs = parseFloat(cs.fontSize), pad = parseFloat(cs.paddingTop) + parseFloat(cs.paddingBottom);
+          const h = th.getBoundingClientRect().height;
+          return { text: th.textContent, lines: Math.round((h - pad) / (fs * 1.2)), nowrap: cs.whiteSpace === 'nowrap' };
+        });
+        const card = tbl.closest('.card');
+        return { page: document.documentElement.scrollWidth <= innerWidth, card: card.scrollWidth <= card.clientWidth + 1, desktop: width > 860, heads };
+      }, w);
+    }
+  }
+  const bad = [];
+  Object.keys(fitReport).forEach(k => {
+    const r = fitReport[k];
+    if (!r.page || !r.card) bad.push(k + ' overflows');
+    if (r.desktop) r.heads.forEach(h => { if (h.lines > 1 || !h.nowrap) bad.push(k + ' header "' + h.text + '" wraps'); });
+  });
+  check('table header words never break and the dispatch tables fit at 1280, 1180, 1000 and 375px', Object.keys(fitReport).length === 8 && bad.length === 0, bad.join('; '));
+  await goSchedule(pp2, 'orders');
+  await addOrder(pp2, { cust: ZF, no: 'PO-fit', code: 'VX1001', part: 'Long description for the fit check', qty: 100, promised: dayOf(-1) });
+  const orderFit = [];
+  for (const w of [1280, 1180, 1000, 375]) {
+    await pp2.setViewportSize({ width: w, height: 900 });
+    orderFit.push(await pp2.evaluate(() => { const c = document.getElementById('orderTable').closest('.card'); return document.documentElement.scrollWidth <= innerWidth && c.scrollWidth <= c.clientWidth + 1; }));
+  }
+  check('the orders table fits at 1280, 1180, 1000 and 375px', orderFit.every(Boolean), orderFit.join());
 };

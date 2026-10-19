@@ -52,3 +52,6 @@
 #mnyUnmDlg { width: min(560px, calc(100vw - 16px)); }
 #mnyUnmDlg .mny-unm { display: grid; gap: 8px; }
 .mny-unmfoot { padding: 0 22px 18px; }
+.mny-unmtog { all: unset; box-sizing: border-box; width: 100%; display: block; padding: 8px 0; font-size: .9rem; font-weight: 700; color: var(--navy); cursor: pointer; }
+.mny-unmtog:focus-visible { outline: 3px solid var(--orange); outline-offset: 2px; }
+.mny-link { text-decoration: underline; }

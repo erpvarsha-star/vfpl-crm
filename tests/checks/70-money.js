@@ -131,6 +131,12 @@ module.exports = async (t) => {
   await host(page);
 
   // ---------- a manual match from the card, and from the import dialog, is remembered ----------
+  const sumLine = await page.locator('#mnyUnmToggle').innerText();
+  check('the unmatched names are a collapsed one-line summary by default, with the amount and "Review"', /^▸ ?1 name not matched to customers · ₹10,000 · Review$/.test(sumLine.replace(/\s+/g, ' ')) && (await page.locator('#mnyUnmToggle').getAttribute('aria-expanded')) === 'false' && (await page.locator('.mny-unmlist').count()) === 0, sumLine);
+  await page.click('#mnyUnmToggle');
+  await t.reload(page);
+  await host(page);
+  check('the expanded state of the unmatched summary survives a refresh', (await page.locator('#mnyUnmToggle').getAttribute('aria-expanded')) === 'true' && (await page.locator('.mny-unmlist li').count()) === 1);
   const card = await page.locator('.mny-unm').innerText();
   check('the card lists unmatched names with their amount', /Zeta Imaginary Pvt Ltd/.test(card) && card.includes(inr(10000)), card);
   await page.locator('.mny-unmlist li select').selectOption('s-k-traders');
