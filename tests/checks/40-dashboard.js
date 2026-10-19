@@ -545,8 +545,12 @@ module.exports = async (t) => {
   // report and links
   await f.click('#weeklyReportBtn');
   check('Weekly sales review button opens the report', (await f.evaluate(() => window.__reportOpen)) === 1 && (await f.locator('#weeklyReportLink').count()) === 1);
+  await f.keyboard.press('Escape');   // the real report module (when merged) opens its own dialog
+  await f.waitForFunction(() => { const d = document.getElementById('reportDlg'); return !d || !d.open; });
   await f.click('#weeklyReportLink');
   check('the Quick links Weekly sales review also opens the report', (await f.evaluate(() => window.__reportOpen)) === 2);
+  await f.keyboard.press('Escape');
+  await f.waitForFunction(() => { const d = document.getElementById('reportDlg'); return !d || !d.open; });
 
   // Hide amounts
   const maskedBefore = await f.locator('#panel-dash').innerText();
