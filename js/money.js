@@ -203,7 +203,7 @@
     var nErp = check("ERP Overdue", "overdue");
     var nModel = check("Model Overdue", "modelOverdue");
     if (nErp && !nModel && items.some(function (it) { return it.modelOverdue != null; })) {
-      out.push("The buckets (with Pre April) match Model Overdue in every row; the headline overdue uses ERP Overdue.");
+      out.push("The age buckets (with Pre April) match Model Overdue in every row. The headline overdue in the CRM is ERP Overdue, so the buckets will not add up to it.");
     }
     return out;
   }

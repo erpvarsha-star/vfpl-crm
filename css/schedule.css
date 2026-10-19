@@ -1,1 +1,115 @@
-/* schedule styles (owned by A5; stub from A1). */
+/* Schedule tab (A5). Classes are prefixed sch- / cal so they never collide with other tabs.
+   Colours: red / orange only for late, not-done and stale meaning, always with words next to them. */
+.sch-tabs { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 14px; border-bottom: 1px solid var(--line); }
+.sch-tab { font: inherit; font-weight: 700; font-size: .95rem; min-height: 44px; padding: 8px 16px; border: 0; border-bottom: 3px solid transparent; background: none; color: var(--ink-dim); cursor: pointer; }
+.sch-tab[aria-selected="true"] { color: var(--navy); border-bottom-color: var(--orange); }
+.sch-tab:focus-visible { outline: 3px solid var(--orange); outline-offset: -3px; }
+.sch-nav { justify-content: space-between; }
+.sch-nav .sch-title { flex: 1 1 auto; min-width: 0; }
+.sch-title { font-size: 1.15rem; color: var(--navy); }
+.sch-add { padding: 9px 16px; font-size: .95rem; }
+.sch-redtext b, .sch-redtext { color: var(--risk); }
+.sch-empty { padding: 28px 16px; text-align: center; color: var(--ink-dim); line-height: 1.5; }
+.sch-through { margin: 0 0 10px; font-weight: 700; color: var(--ink-dim); font-size: .9rem; }
+.sch-stale { color: var(--warn); }
+.sch-inline { display: flex; align-items: center; gap: 6px; font-size: .85rem; }
+.sch-inline input, .sch-inline select { width: auto; padding: 6px 8px; font-size: .9rem; }
+.sch-filters { align-items: center; }
+
+/* ---------- calendar ---------- */
+.sch-split { display: grid; grid-template-columns: minmax(0, 1fr) 360px; gap: 16px; align-items: start; }
+.sch-calwrap { min-width: 0; }
+table.cal { width: 100%; table-layout: fixed; border-collapse: collapse; background: var(--card); border: 1px solid var(--line); border-radius: 12px; overflow: hidden; }
+table.cal th { padding: 8px 4px; text-align: center; font-size: .75rem; }
+table.cal td { padding: 0; vertical-align: top; border: 1px solid var(--line); }
+table.cal tbody tr + tr td { border-top: 1px solid var(--line); }
+table.cal tbody tr:hover td { background: none; }
+.cal td.out { background: #f8f9fc; }
+button.day { all: unset; box-sizing: border-box; display: flex; flex-direction: column; gap: 2px; width: 100%; min-height: 92px; padding: 4px; cursor: pointer; position: relative; overflow: hidden; }
+button.day:hover { background: var(--paper); }
+button.day:focus-visible { outline: 3px solid var(--orange); outline-offset: -3px; }
+button.day.out { opacity: .55; }
+button.day.sel { background: #e6edf8; }
+button.day.today .dnum { box-shadow: 0 0 0 2px var(--orange); border-radius: 999px; padding: 0 6px; }
+.dnum { font-weight: 800; font-size: .85rem; align-self: flex-start; color: var(--navy); }
+.dot { position: absolute; top: 6px; right: 6px; width: 9px; height: 9px; border-radius: 50%; background: var(--risk); }
+.vchip { display: block; font-size: .7rem; line-height: 1.25; padding: 1px 4px; border-radius: 4px; background: #e6edf8; color: var(--navy); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.vchip-missed { background: var(--risk-bg); color: var(--risk); font-weight: 700; }
+.vchip-today { background: var(--warn-bg); color: var(--warn); font-weight: 700; }
+.vchip-done { background: var(--ok-bg); color: var(--ok); }
+.vmore { font-size: .7rem; color: var(--ink-dim); font-weight: 700; }
+
+/* ---------- agenda ---------- */
+.sch-agenda { display: grid; gap: 14px; min-width: 0; }
+.sch-gtitle { font-size: .8rem; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; color: var(--ink-dim); margin-bottom: 6px; }
+.sch-redgroup .sch-gtitle { color: var(--risk); }
+.sch-list { list-style: none; display: grid; gap: 8px; }
+.sch-item { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 10px 12px; display: grid; gap: 4px; min-width: 0; }
+.sch-item.sch-missed { border-color: var(--risk); background: #fff5f4; }
+.sch-head { display: flex; flex-wrap: wrap; gap: 8px; align-items: baseline; font-size: .85rem; color: var(--ink-dim); font-weight: 700; }
+.sch-type { text-transform: uppercase; font-size: .7rem; letter-spacing: .06em; }
+.sch-main { min-width: 0; }
+.sch-cust { all: unset; cursor: pointer; font-weight: 700; color: var(--navy); border-bottom: 1px dotted var(--ink-dim); overflow-wrap: anywhere; }
+.sch-cust:hover { color: var(--orange); }
+.sch-cust:focus-visible { outline: 3px solid var(--orange); outline-offset: 2px; }
+.sch-note { font-size: .9rem; overflow-wrap: anywhere; margin-top: 2px; }
+.sch-state { font-size: .85rem; font-weight: 700; color: var(--ink-dim); }
+.sch-missed .sch-state { color: var(--risk); font-weight: 800; }
+.sch-today .sch-state { color: var(--warn); font-weight: 800; }
+.sch-done .sch-state { color: var(--ok); }
+.sch-act { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; justify-content: space-between; }
+.sch-check { display: inline-flex; flex-direction: row; align-items: center; gap: 6px; font-size: .9rem; font-weight: 600; cursor: pointer; }
+.sch-check input { width: 20px; height: 20px; padding: 0; flex: none; }
+.sch-confirm { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; padding-top: 6px; border-top: 1px dashed var(--line); }
+.btn-sm.primary { background: var(--orange); border-color: var(--orange); color: #fff; }
+
+/* ---------- orders and dispatch tables ---------- */
+.sch-table th, .sch-table td { vertical-align: top; }
+.sch-table td.name { font-weight: 700; }
+.sch-rowlate td { background: #fff5f4; }
+.sch-ostate { font-weight: 800; }
+.sch-o-late { color: var(--risk); }
+.sch-o-today { color: var(--warn); }
+.sch-o-soon, .sch-o-later { color: var(--ink); font-weight: 700; }
+.sch-o-dispatched, .sch-o-dispatchedLate, .sch-o-cancelled, .sch-dim { color: var(--ink-dim); font-weight: 600; }
+.sch-hint { display: block; margin-top: 6px; white-space: normal; text-align: left; }
+.sch-job { color: var(--navy); font-weight: 700; }
+.sch-tog { all: unset; cursor: pointer; font-weight: 700; display: inline; }
+.sch-tog:focus-visible { outline: 3px solid var(--orange); outline-offset: 2px; }
+.sch-caret { display: inline-block; width: 1em; color: var(--ink-dim); }
+.sch-nomatch { background: var(--paper); color: var(--ink-dim); }
+.sch-exp td { background: #f8f9fc; padding-top: 4px; padding-bottom: 12px; }
+.sch-parts { list-style: none; display: grid; gap: 6px; }
+.sch-parts li { display: flex; flex-wrap: wrap; gap: 4px 16px; font-size: .88rem; }
+.sch-pcode { font-weight: 800; min-width: 90px; }
+
+.sch-unmbox { padding: 12px 14px; margin-bottom: 12px; overflow: visible; }
+.sch-unmbox h3 { font-size: .9rem; color: var(--navy); }
+.sch-unm { list-style: none; display: grid; gap: 8px; margin-top: 8px; }
+.sch-unm li { display: grid; gap: 6px; padding: 8px; border: 1px solid var(--line); border-radius: 8px; }
+.sch-unmname { font-weight: 700; overflow-wrap: anywhere; }
+
+.sch-months { list-style: none; display: grid; gap: 4px; padding: 10px; }
+.sch-mbtn { all: unset; box-sizing: border-box; width: 100%; display: grid; grid-template-columns: 76px minmax(0, 1fr) minmax(0, 1.6fr); gap: 10px; align-items: center; padding: 8px 6px; border-radius: 8px; cursor: pointer; font-size: .88rem; }
+.sch-mbtn:hover { background: var(--paper); }
+.sch-mbtn[aria-pressed="true"] { background: #e6edf8; outline: 2px solid var(--navy); }
+.sch-mbtn:focus-visible { outline: 3px solid var(--orange); outline-offset: 2px; }
+.sch-mname { font-weight: 800; }
+.sch-mtrack { display: block; height: 14px; background: var(--line); border-radius: 7px; overflow: hidden; }
+.sch-mfill { display: block; height: 100%; background: var(--navy-2); }
+.sch-mtext { color: var(--ink-dim); font-weight: 600; }
+
+/* ---------- phone: the agenda list replaces the month grid ---------- */
+@media (max-width: 860px) {
+  .sch-split { grid-template-columns: minmax(0, 1fr); }
+  .sch-calwrap { display: none; }
+  .sch-nav .sch-title { flex-basis: 100%; order: -1; }
+  .sch-add { flex: 1 1 100%; }
+  .sch-tab { flex: 1 1 auto; padding: 8px 10px; font-size: .88rem; }
+  .sch-mbtn { grid-template-columns: 64px minmax(0, 1fr); }
+  .sch-mtext { grid-column: 1 / 3; }
+  .sch-hint { margin-top: 0; }
+  .sch-exp td { display: block; }
+  .sch-inline { flex: 1 1 140px; }
+  .sch-inline input, .sch-inline select { flex: 1; width: 100%; }
+}

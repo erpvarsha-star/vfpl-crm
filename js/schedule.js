@@ -217,7 +217,7 @@
   var DEFAULTS = {
     sub: "visits", month: "", wstart: "", day: "", vflag: "", vcust: "", vq: "",
     oflag: "open", ocust: "", oq: "",
-    dview: "customer", dq: "", dfrom: "", dto: "", dslipOff: [], dmeasure: "today", dmonth: "", dcust: ""
+    dview: "customer", dq: "", dfrom: "", dto: "", dslipOff: [], dmeasure: "", dmonth: "", dcust: ""
   };
   var S = Object.assign({}, DEFAULTS);
   var rootEl = null, mq = null, E = {};
@@ -496,6 +496,7 @@
     renderGrid(list, t);
     renderAgenda(list, t);
     E.vEmpty.hidden = all.length > 0 || phone();
+    saveState();
   }
 
   /* ---------- visit dialog ---------- */
@@ -517,7 +518,7 @@
     vf.del = el("button", { type: "button", class: "btn", id: "visitDelete", text: "Delete", hidden: true });
     vf.cancel = el("button", { type: "button", class: "btn", id: "visitCancel", text: "Cancel" });
     vf.save = el("button", { type: "submit", class: "btn primary", id: "visitSave", text: "Save" });
-    vf.form = el("form", { id: "visitForm", method: "dialog" }, [
+    vf.form = el("form", { id: "visitForm", method: "dialog", novalidate: true }, [
       field("Customer *", vf.cust), vf.list,
       el("div", { class: "two" }, [field("Type", vf.type), field("Date *", vf.date)]),
       field("Time (optional)", vf.time),
@@ -639,6 +640,11 @@
   function lastDispatch(id) {
     if (!lastMap || lastVer !== dver) { lastMap = lastDispatchMap(dispatchRows()); lastVer = dver; }
     return lastMap[id] || "";
+  }
+  /* "Measure from": the user's choice, else automatic ("" until chosen): the last dispatch in the file when it is more than 30 days old, otherwise today. */
+  function measureMode(through, t) {
+    if (S.dmeasure) return S.dmeasure;
+    return through && daysBetween(through, t) > 30 ? "data" : "today";
   }
   function dispatchStatsNow(t) { return dispatchStats(dispatchRows(), Store.customers(), t || today()); }
   function slipTypes(rows) {
@@ -880,21 +886,23 @@
     ["customer", "part", "month"].forEach(function (v) { E["dv-" + v].setAttribute("aria-pressed", String(S.dview === v)); });
     if (E.dQ.value !== S.dq) E.dQ.value = S.dq;
     E.dFrom.value = S.dfrom; E.dTo.value = S.dto;
-    E.dMeasure.value = S.dmeasure;
+    var mode = measureMode(through, t);
+    E.dMeasure.value = mode;
     var cname = S.dcust ? custName(S.dcust) : "";
     E.dExtra.hidden = !(S.dmonth || S.dcust);
     E.dExtraLabel.textContent = [S.dmonth ? "Month: " + monthShort(S.dmonth) : "", S.dcust ? "Customer: " + cname : ""].filter(Boolean).join(" · ");
     renderSlipChips(all);
     renderUnmatched(all);
-    var ref = S.dmeasure === "data" ? through : t;
+    var ref = mode === "data" ? through : t;
     var rows = dispatchFiltered(all, S.dview !== "month");
     var agg = dispatchAgg(rows, ref);
-    var sum = plural(agg.slips, "slip", "slips") + " · " + qtyText(agg.totalQty) + " pcs" + (S.dmeasure === "data" ? " · windows end " + App.fmt.date(ref) : "");
-    E.dSummary.textContent = sum;
+    E.dSummary.textContent = plural(agg.slips, "slip", "slips") + " · " + qtyText(agg.totalQty) + " pcs";
+    E.dRef.textContent = mode === "data" ? "Measured from " + App.fmt.date(ref) + ", the last dispatch in the file." : "Measured from today, " + App.fmt.date(ref) + ".";
     Ui.clear(E.dBody);
     if (S.dview === "part") renderPartView(agg);
     else if (S.dview === "month") renderMonthView(agg);
     else renderCustomerView(agg, ref);
+    saveState();
   }
 
   /* ======================================================================== */
@@ -957,6 +965,7 @@
     E.oEmpty.hidden = list.length > 0;
     E.oEmptyText.textContent = allRows.length ? "No orders match this filter." : "No upcoming orders yet. Add the orders customers have been promised dates for. Dispatch history (if imported) can then hint when one looks dispatched.";
     E.oTable.hidden = !list.length;
+    saveState();
   }
 
   /* ---------- order dialog ---------- */
@@ -980,7 +989,7 @@
     of.del = el("button", { type: "button", class: "btn", id: "orderDelete", text: "Delete", hidden: true });
     of.cancel = el("button", { type: "button", class: "btn", id: "orderCancel", text: "Cancel" });
     of.save = el("button", { type: "submit", class: "btn primary", id: "orderSave", text: "Save order" });
-    of.form = el("form", { id: "orderForm", method: "dialog" }, [
+    of.form = el("form", { id: "orderForm", method: "dialog", novalidate: true }, [
       field("Customer *", of.cust), of.custList,
       el("div", { class: "two" }, [field("PO / order no", of.no), field("Part code", of.code)]), of.codeList,
       field("Part description", of.part),
@@ -1220,11 +1229,12 @@
     E.dSlips = el("div", { class: "bar", role: "group", "aria-label": "Slip types", id: "dslips" });
     E.dUnm = el("div", { class: "sch-unmbox card", id: "dispatchUnmatched", hidden: true });
     E.dSummary = el("p", { class: "note", id: "dispatchSummary" });
+    E.dRef = el("p", { class: "note", id: "dispatchRef" });
     E.dBody = el("div", { id: "dispatchBody" });
     E.dMain = el("div", { hidden: true }, [
-      el("div", { class: "bar", role: "group", "aria-label": "Dispatch view" }, [E.dv_customer = E["dv-customer"], E["dv-part"], E["dv-month"]]),
+      el("div", { class: "bar", role: "group", "aria-label": "Dispatch view" }, [E["dv-customer"], E["dv-part"], E["dv-month"]]),
       el("div", { class: "bar sch-filters" }, [E.dQ, el("label", { class: "sch-inline" }, ["From", E.dFrom]), el("label", { class: "sch-inline" }, ["To", E.dTo]), el("label", { class: "sch-inline" }, ["Measure from", E.dMeasure]), E.dExtra]),
-      E.dSlips, E.dUnm, E.dSummary, E.dBody
+      E.dSlips, E.dUnm, E.dSummary, E.dRef, E.dBody
     ]);
     pd.appendChild(el("div", { class: "bar sch-nav" }, [el("h2", { class: "sch-title", text: "Dispatch history" }), E.dImport, E.dClear]));
     pd.appendChild(E.dThrough);
@@ -1239,7 +1249,7 @@
     E.dQ.addEventListener("input", function () { S.dq = E.dQ.value; renderDispatch(); saveState(); });
     E.dFrom.addEventListener("change", function () { S.dfrom = iso(E.dFrom.value); renderDispatch(); saveState(); });
     E.dTo.addEventListener("change", function () { S.dto = iso(E.dTo.value); renderDispatch(); saveState(); });
-    E.dMeasure.addEventListener("change", function () { S.dmeasure = E.dMeasure.value === "data" ? "data" : "today"; renderDispatch(); saveState(); });
+    E.dMeasure.addEventListener("change", function () { S.dmeasure = E.dMeasure.value === "today" ? "today" : "data"; renderDispatch(); saveState(); });
     dx.addEventListener("click", function () { S.dmonth = ""; S.dcust = ""; renderDispatch(); saveState(); });
   }
 
