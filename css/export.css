@@ -1,1 +1,47 @@
-/* export styles (owned by A6; stub from A1). */
+/* Export tab styles (A6). Everything is scoped under #panel-export; class names are prefixed ex-. */
+#panel-export { min-width: 0; }
+#panel-export .ex-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; align-items: start; }
+#panel-export .ex-card { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 18px; min-width: 0; display: grid; gap: 12px; }
+#panel-export .ex-card.ex-wide { grid-column: 1 / -1; }
+#panel-export h2 { font-size: 1.1rem; font-weight: 800; color: var(--navy); outline: none; }
+#panel-export .ex-hint { font-size: .85rem; color: var(--ink-dim); line-height: 1.5; overflow-wrap: anywhere; }
+#panel-export .ex-private { font-size: .85rem; font-weight: 700; color: var(--navy); background: #e6edf8; border-radius: 8px; padding: 8px 12px; line-height: 1.4; overflow-wrap: anywhere; }
+#panel-export .ex-actions { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+#panel-export .ex-actions .btn { padding: 10px 16px; }
+
+/* checkboxes and radios: own sizing, so the global full-width input style does not stretch them */
+#panel-export label.ex-check { display: flex; align-items: flex-start; gap: 10px; font-size: .95rem; font-weight: 600; cursor: pointer; min-height: 32px; }
+#panel-export label.ex-check input { width: 20px; height: 20px; flex: none; padding: 0; margin-top: 2px; accent-color: var(--orange); cursor: pointer; }
+#panel-export label.ex-check input:focus-visible { outline: 3px solid var(--orange); outline-offset: 2px; }
+#panel-export label.ex-incl span { display: grid; gap: 2px; min-width: 0; }
+#panel-export label.ex-incl b { font-weight: 800; color: var(--ink); }
+#panel-export label.ex-incl small { font-size: .8rem; font-weight: 500; color: var(--ink-dim); }
+#panel-export .ex-scope { display: grid; gap: 4px; }
+#panel-export .ex-scope span { overflow-wrap: anywhere; }
+
+/* clipboard fallback */
+#panel-export .ex-fallback { display: grid; gap: 8px; padding: 12px; border: 1px dashed var(--navy-3); border-radius: 10px; font-size: .85rem; color: var(--ink); }
+#panel-export .ex-fallback textarea { min-height: 96px; font-size: .85rem; font-family: ui-monospace, Consolas, monospace; resize: vertical; }
+
+/* "coming next" card: design only, nothing to click */
+#panel-export .ex-soon-card { border-style: dashed; background: transparent; }
+#panel-export .ex-soon { display: inline-block; font-size: .75rem; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; color: var(--navy); background: #e6edf8; border-radius: 999px; padding: 4px 12px; }
+
+/* data card */
+#panel-export .ex-data { list-style: none; display: grid; gap: 0; }
+#panel-export .ex-data li { display: grid; grid-template-columns: minmax(130px, 200px) minmax(0, 1fr); gap: 4px 16px; padding: 9px 0; border-top: 1px solid var(--line); font-size: .92rem; }
+#panel-export .ex-data li:first-child { border-top: 0; }
+#panel-export .ex-dl { font-weight: 700; color: var(--ink-dim); }
+#panel-export .ex-dv { color: var(--ink); min-width: 0; overflow-wrap: anywhere; }
+#panel-export .ex-danger { color: var(--risk); border-color: var(--risk); }
+#panel-export .ex-danger:hover { background: var(--risk-bg); }
+
+/* messages */
+#panel-export .ex-msg { margin-top: 14px; font-size: .9rem; font-weight: 600; color: var(--navy); min-height: 1.4em; overflow-wrap: anywhere; }
+#panel-export .ex-err { margin-top: 8px; padding: 9px 12px; border-radius: 8px; background: var(--risk-bg); color: var(--risk); font-size: .9rem; font-weight: 700; overflow-wrap: anywhere; }
+
+@media (max-width: 860px) {
+  #panel-export .ex-grid { grid-template-columns: minmax(0, 1fr); }
+  #panel-export .ex-data li { grid-template-columns: minmax(0, 1fr); }
+  #panel-export .ex-actions .btn { flex: 1 1 100%; }
+}
