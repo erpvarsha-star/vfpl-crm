@@ -7,7 +7,7 @@ module.exports = async (t) => {
   check('first visit opens the Dashboard tab',
     (await page.getAttribute('#tab-dash', 'aria-selected')) === 'true' && await page.locator('#panel-dash').isVisible() && await page.locator('#panel-list').isHidden());
   const labels = await page.locator('nav.tabs[role=tablist] [role=tab]').allInnerTexts();
-  check('tab order is Dashboard, Customers, RFQs, Schedule, Export', labels.join(', ') === 'Dashboard, Customers, RFQs, Schedule, Export', labels.join(', '));
+  check('tab order is Dashboard, Customers, Leads, RFQs, Schedule, Export', labels.join(', ') === 'Dashboard, Customers, Leads, RFQs, Schedule, Export', labels.join(', '));
 
   await t.tab(page, 'list');
   await t.reload(page);
@@ -46,11 +46,15 @@ module.exports = async (t) => {
   // every stub mounts
   const before = t.errors.length;
   let content = true;
-  for (const id of ['dash', 'list', 'rfqs', 'schedule', 'export']) {
+  for (const id of ['dash', 'list', 'leads', 'rfqs', 'schedule', 'export']) {
     await t.tab(page, id);
     if (!(await page.locator('#panel-' + id).innerText()).trim()) content = false;
   }
   check('every panel stub mounts without console errors', content && t.errors.length === before, JSON.stringify(t.errors));
+
+  await t.tab(page, 'leads');
+  check('Leads panel stub mounts', (await page.getAttribute('#tab-leads', 'aria-selected')) === 'true' && await page.locator('#panel-leads').isVisible() && (await page.locator('#panel-leads').innerText()).trim().length > 0 &&
+    (await page.locator('#tab-leads').innerText()) === 'Leads');
 
   // a module needs no shell edit beyond the markup: a panel registered for an id with no tab gets one
   await page.evaluate(() => { App.registerPanel('zz', { label: 'Zed', mount(el) { el.textContent = 'hello zed'; }, render() {}, show() {} }); });
@@ -64,7 +68,7 @@ module.exports = async (t) => {
   // 375px
   const phone = await t.fresh({ viewport: { width: 375, height: 760 } });
   await t.open(phone.page);
-  for (const id of ['dash', 'list', 'rfqs', 'schedule', 'export']) {
+  for (const id of ['dash', 'list', 'leads', 'rfqs', 'schedule', 'export']) {
     await t.tab(phone.page, id);
   }
   const m = await phone.page.evaluate(() => {
