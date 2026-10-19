@@ -163,12 +163,19 @@
   }
 
   /* ---------- small builders (text only) ---------- */
+  /* Every Dashboard link replaces the target tab's filters (never merges). Customers also gets an explicit sort, so a
+     sort picked by an earlier link (for example "largest overdue first") is not left behind. */
+  function openTab(tab, filter) {
+    var f = Object.assign({}, filter || {});
+    if (tab === "list" && f.sort === undefined) f.sort = "follow";
+    App.show(tab, f);
+  }
   function jump(tab, filter, n, attrs, kids) {
     var a = Object.assign({}, attrs || {});
     a.type = "button";
     a.dataset = Object.assign({ go: tab }, a.dataset || {});
     if (n != null) a.dataset.n = String(n);
-    a.onclick = function () { App.show(tab, filter); };
+    a.onclick = function () { openTab(tab, filter); };
     return el("button", a, kids);
   }
   function call(name, fn, arg) {
@@ -218,7 +225,8 @@
       el("h2", { id: "dh-" + id, tabindex: "-1", text: title }));
   }
   function sub(text) { return el("h3", { class: "d-sub", text: text }); }
-  function moduleMissing(sec) { sec.appendChild(empty("Not available yet.")); }
+  function moduleMissing(sec) { sec.classList.add("d-nodata"); sec.appendChild(empty("Not available yet.")); }
+  function noData(sec) { sec.classList.add("d-nodata"); return sec; }
 
   /* ---------- gather ---------- */
   function lastDispatchFn() {
@@ -272,6 +280,7 @@
     if (m.state === "missing") return moduleMissing(sec);
     var importBtn = actionBtn("Import money data", call("CrmMoney", "openImport"), { id: "moneyImportBtn", class: "btn-sm no-print" });
     if (m.state === "empty") {
+      noData(sec);
       sec.appendChild(empty("No money data yet. Export the AGING and LIVE_POSITION tabs of the VFPL Collections Engine sheet as CSV and import them here. Amounts stay in this browser only and are never saved to git."));
       sec.appendChild(importBtn);
       return;
@@ -311,6 +320,21 @@
       });
       sec.appendChild(legend);
     }
+    if (moneyReady()) {
+      var relIds = [], relOver = 0, seenG = {};
+      S.customers().forEach(function (c) {
+        if (!c.relatedParty) return;
+        var mm = CrmMoney.forCustomer(c.id);
+        if (!mm || !((mm.overdue || 0) > 0 || (mm.outstanding || 0) > 0)) return;
+        relIds.push(c.id);
+        if (mm.shared) { if (seenG[mm.shared.groupName]) return; seenG[mm.shared.groupName] = 1; }
+        relOver += mm.overdue > 0 ? mm.overdue : 0;
+      });
+      if (relIds.length) {
+        sec.appendChild(el("p", { class: "d-note d-relnote" }, jump("list", { extra: { kind: "ids", value: relIds, label: "Related parties with money owed" } }, relIds.length,
+          { class: "d-link", id: "moneyRelated" }, ["Includes " + plural(relIds.length, "related party", "related parties") + " (", amount(relOver), " overdue)"])));
+      }
+    }
     var top = (s.top5 || []).slice(0, 5);
     if (top.length) {
       sec.appendChild(sub("Top 5 overdue"));
@@ -320,11 +344,12 @@
         var ids = Array.isArray(r.ids) && r.ids.length ? r.ids : [r.id];
         all = all.concat(ids);
         ol.appendChild(el("li", null, jump("list", { extra: { kind: "ids", value: ids, label: r.name } }, ids.length, { class: "d-row", dataset: { top: r.id } }, [
-          el("span", { class: "d-row-name", text: r.name }), el("span", { class: "d-risk" }, [amount(r.overdue), " overdue"])
+          el("span", { class: "d-row-name" }, [r.name, ids.some(function (id) { var c = S.get(id); return c && c.relatedParty; }) ? el("span", { class: "d-tag", text: "Related party" }) : null]),
+          el("span", { class: "d-risk" }, [amount(r.overdue), " overdue"])
         ])));
       });
       sec.appendChild(ol);
-      sec.appendChild(actionBtn("Show these " + top.length, function () { App.show("list", { extra: { kind: "ids", value: all, label: "Top " + top.length + " overdue" } }); }, { dataset: { go: "list", n: String(all.length) }, id: "top5All" }));
+      sec.appendChild(actionBtn("Show these " + top.length, function () { openTab("list", { extra: { kind: "ids", value: all, label: "Top " + top.length + " overdue" } }); }, { dataset: { go: "list", n: String(all.length) }, id: "top5All" }));
     }
     var meta = mod("CrmMoney") && CrmMoney.meta ? CrmMoney.meta() : null, parts = [];
     if (meta && meta.aging && meta.aging.asOf) parts.push(fmt.date(meta.aging.asOf) + " (AGING)");
@@ -353,9 +378,10 @@
       grid.appendChild(slot);
       return;
     }
+    if (slot.querySelector('[data-state="empty"]')) noData(slot);
     if (!slot.querySelector("#incRelated")) {
       var on = dashView().incRelated === true;
-      var bar = el("div", { class: "dcard d-s12 d-relbar", id: "dashRelBar" });
+      var bar = el("div", { class: "dcard d-s12 d-relbar" + (slot.classList.contains("d-nodata") ? " d-nodata" : ""), id: "dashRelBar" });
       bar.appendChild(el("button", {
         type: "button", class: "chip", id: "incRelated", "aria-pressed": String(on), text: "Include related parties",
         onclick: function () { setDash("incRelated", !(dashView().incRelated === true)); render(); }
@@ -371,7 +397,7 @@
     }
     grid.appendChild(slot);
   }
-  function go(tab, filter) { return function () { App.show(tab, filter); }; }
+  function go(tab, filter) { return function () { openTab(tab, filter); }; }
 
   function phoneNode(p) {
     var raw = String(p || "").replace(/\s+/g, "");
@@ -461,7 +487,7 @@
     grid.appendChild(sec);
     if (r.state === "missing") return moduleMissing(sec);
     var s = r.state === "data" ? r.v : null;
-    if (!s || !s.total) { sec.appendChild(empty("No RFQs yet. Add them on the RFQs tab or import your RFQ sheet.")); return; }
+    if (!s || !s.total) { noData(sec); sec.appendChild(empty("No RFQs yet. Add them on the RFQs tab or import your RFQ sheet.")); return; }
     var stages = (mod("CrmRfq").STAGES || Object.keys(s.byStage || {})).slice(), max = 0;
     stages.forEach(function (k) { max = Math.max(max, (s.byStage && s.byStage[k]) || 0); });
     var funnel = el("div", { class: "d-funnel" });
@@ -498,6 +524,7 @@
     grid.appendChild(sec);
     if (r.state === "missing") return moduleMissing(sec);
     var s = r.state === "data" ? r.v : null, rel = s && s.released ? s.released : { total: 0, byStage: {}, list: [] };
+    if (!s || !s.total) noData(sec);
     sec.appendChild(tiles([tile("released", "Released parts", num(rel.total || 0), "", "", "rfqs", { stage: "released", view: "table" }, rel.total || 0)]));
     var chips = el("div", { class: "d-chips" });
     ["Finalised", "PO", "Sample", "PPAP"].forEach(function (k) {
@@ -523,6 +550,7 @@
     grid.appendChild(sec);
     var o = d.orders, dp = d.dispatch, ms = !modFn("CrmSchedule", "orderStats");
     if (ms && !modFn("CrmSchedule", "dispatchStats")) return moduleMissing(sec);
+    if (!o && !dp) noData(sec);
     if (ms) sec.appendChild(empty("Not available yet."));
     else if (!o) sec.appendChild(empty("No upcoming orders added yet."));
     else {
@@ -562,6 +590,7 @@
     var s = l.state === "data" ? l.v : null, bk = s && s.byBucket ? s.byBucket : {};
     var any = s && ((s.open || 0) > 0 || Object.keys(bk).some(function (k) { return bk[k] > 0; }));
     if (!any) {
+      noData(sec);
       sec.appendChild(empty("No leads yet. Import your lead trackers on the Leads tab."));
       sec.appendChild(actionBtn("Open Leads", go("leads", {}), { class: "btn-sm no-print", id: "toLeads" }));
       return;
