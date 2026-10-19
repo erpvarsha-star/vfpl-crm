@@ -332,7 +332,7 @@
     if (!parts.length && s.asOf) parts.push(fmt.date(s.asOf));
     var foot = el("div", { class: "d-foot" }, [el("span", { class: "d-dim", text: "Data as of " + parts.join(", ") })]);
     if (s.unmatched && s.unmatched.n > 0) {
-      foot.appendChild(el("button", { type: "button", class: "d-link", id: "moneyUnmatched", onclick: call("CrmMoney", "openImport") }, ["Includes ", amount(s.unmatched.amount), " for " + plural(s.unmatched.n, "name", "names") + " not in the CRM"]));
+      foot.appendChild(el("button", { type: "button", class: "d-link", id: "moneyUnmatched", onclick: call("CrmMoney", modFn("CrmMoney", "openUnmatched") ? "openUnmatched" : "openImport") }, ["Includes ", amount(s.unmatched.amount), " for " + plural(s.unmatched.n, "name", "names") + " not in the CRM"]));
     }
     foot.appendChild(importBtn);
     sec.appendChild(foot);
