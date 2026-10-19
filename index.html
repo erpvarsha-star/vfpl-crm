@@ -1,0 +1,104 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Varsha CRM</title>
+<style>
+  :root {
+    --navy: #0f2340;
+    --navy-deep: #091629;
+    --navy-line: #1d3a63;
+    --orange: #f26b1d;
+    --orange-hover: #ff7f33;
+    --text: #ffffff;
+    --text-dim: #a9bad3;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { height: 100%; }
+  body {
+    background: radial-gradient(ellipse at 50% 35%, var(--navy) 0%, var(--navy-deep) 75%);
+    background-color: var(--navy-deep);
+    color: var(--text);
+    font-family: "Segoe UI", system-ui, -apple-system, Roboto, Helvetica, Arial, sans-serif;
+    display: flex;
+    flex-direction: column;
+    min-height: 100vh;
+  }
+  main {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    padding: 48px 16px;
+    gap: 28px;
+  }
+  .company {
+    font-size: clamp(0.85rem, 2.4vw, 1.05rem);
+    letter-spacing: 0.22em;
+    text-transform: uppercase;
+    color: var(--text-dim);
+  }
+  h1 {
+    font-size: clamp(3.2rem, 14vw, 8.5rem);
+    font-weight: 800;
+    line-height: 0.95;
+    letter-spacing: -0.02em;
+  }
+  h1 span { color: var(--orange); }
+  .tagline {
+    font-size: clamp(1rem, 3vw, 1.3rem);
+    color: var(--text-dim);
+    margin-top: -8px;
+  }
+  .date {
+    font-size: clamp(1.1rem, 3.6vw, 1.6rem);
+    font-weight: 600;
+    padding: 10px 22px;
+    border: 1px solid var(--navy-line);
+    border-radius: 999px;
+  }
+  .open-btn {
+    display: inline-block;
+    margin-top: 12px;
+    background: var(--orange);
+    color: #ffffff;
+    text-decoration: none;
+    font-size: clamp(1.3rem, 4.5vw, 1.9rem);
+    font-weight: 700;
+    padding: 24px 64px;
+    border-radius: 14px;
+    box-shadow: 0 10px 30px rgba(242, 107, 29, 0.35);
+    transition: background 0.15s, transform 0.15s;
+    max-width: 100%;
+  }
+  .open-btn:hover { background: var(--orange-hover); transform: translateY(-2px); }
+  .open-btn:focus-visible { outline: 3px solid #ffffff; outline-offset: 4px; }
+  footer {
+    text-align: center;
+    padding: 18px 16px;
+    font-size: 0.85rem;
+    color: var(--text-dim);
+    border-top: 1px solid var(--navy-line);
+  }
+</style>
+</head>
+<body>
+<main>
+  <div class="company">Meridian Industries &middot; Pune</div>
+  <h1>Varsha <span>CRM</span></h1>
+  <p class="tagline">Customer tracker</p>
+  <div class="date" id="today"></div>
+  <a class="open-btn" href="customers.html">Open customers</a>
+</main>
+<footer>Meridian Industries &mdash; Forging, Pune</footer>
+<script>
+  // Date shown in India time regardless of the viewer's device clock zone
+  document.getElementById('today').textContent = new Date().toLocaleDateString('en-IN', {
+    weekday: 'long', day: 'numeric', month: 'long', year: 'numeric', timeZone: 'Asia/Kolkata'
+  });
+</script>
+</body>
+</html>
