@@ -371,7 +371,7 @@ module.exports = async (t) => {
   check('only one waiting-on chip applies at a time', (await w.locator('.rfq-card').count()) === 0 && (await w.getAttribute('#rfqChipCust', 'aria-pressed')) === 'false');
 
   // =========================================================================================== no leads module: nothing breaks
-  const nl = await boot();
+  const nl = await boot({ init: () => { Object.defineProperty(window, 'CrmLeads', { configurable: true, get: () => undefined, set: () => {} }); } });
   await openImport(nl);
   await setFile(nl, 'a.csv', ACTION);
   await nl.click('#importOk');
