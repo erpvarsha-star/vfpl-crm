@@ -641,9 +641,9 @@
     badges(r).forEach(function (b) { td.appendChild(b); });
     td = cell("Customer"); td.appendChild(customerLine(r, byId));
     td = cell("Part"); var part = [r.part_name, r.part_no].filter(Boolean).join(" / "); if (part) td.textContent = part; else dash(td);
-    td = cell("Qty"); if (r.qty != null) td.textContent = App.fmt.int(r.qty); else dash(td);
-    td = cell("Received"); if (r.received) td.textContent = App.fmt.date(r.received); else dash(td);
-    td = cell("Quote due");
+    td = cell("Qty", "qty"); if (r.qty != null) td.textContent = App.fmt.int(r.qty); else dash(td);
+    td = cell("Received", "dt"); if (r.received) td.textContent = App.fmt.date(r.received); else dash(td);
+    td = cell("Quote due", "dt");
     if (r.quote_due) td.appendChild(el("span", { text: App.fmt.date(r.quote_due) })); else dash(td);
     wordsEls(r, today).filter(function (x) { return /Quote/.test(x.textContent); }).forEach(function (x) { td.appendChild(x); });
     td = cell("Value"); if (r.quoted_value != null) td.appendChild(Ui.amountEl(r.quoted_value)); else dash(td);
@@ -653,10 +653,10 @@
       var sel = el("select", { class: "stage-sel", "aria-label": "Stage for RFQ " + rfqLabel(r) }, STAGES.map(function (s) { return el("option", { text: s, selected: s === r.stage }); }));
       td.appendChild(sel);
     }
-    td = cell("Next action");
+    td = cell("Next action", "dt");
     if (r.next_action) td.appendChild(el("span", { text: App.fmt.date(r.next_action) })); else dash(td);
     wordsEls(r, today).filter(function (x) { return /Action/.test(x.textContent); }).forEach(function (x) { td.appendChild(x); });
-    td = cell("Age"); if (r.received) td.textContent = days(Math.max(0, S.daysBetween(r.received, today))); else dash(td);
+    td = cell("Age", "age"); if (r.received) td.textContent = days(Math.max(0, S.daysBetween(r.received, today))); else dash(td);
     td = cell("", "act");
     td.appendChild(el("button", { type: "button", class: "edit btn-sm", text: "Edit", "aria-label": "Edit RFQ " + rfqLabel(r) }));
     return tr;
@@ -673,6 +673,23 @@
   }
   function compute() {
     return filterRfqs(rfqCol.all(), histCol.all(), S.customers(), currentFilter(), S.todayISO());
+  }
+  /* Plain words for every active filter (also used by the empty state). Show lost is a view option, not a filter. */
+  function filterWords() {
+    var w = [];
+    if (state.stage === "released") w.push("Released parts (Finalised or later)");
+    else if (state.stage) w.push("Stage: " + state.stage);
+    if (state.flag) w.push(flagLabel());
+    if (state.waiting) w.push(state.waiting === "us" ? "Waiting on us" : "Waiting on customer");
+    if (state.customerId) { var c = S.get(state.customerId); w.push("Customer: " + (c ? c.name : state.customerId)); }
+    if (str(state.q)) w.push('Search: "' + str(state.q) + '"');
+    return w;
+  }
+  function clearFilters() {
+    state.stage = ""; state.flag = ""; state.stuckStage = ""; state.waiting = ""; state.customerId = ""; state.q = "";
+    render();
+    var b = $(state.view === "board" ? "rfqViewBoard" : "rfqViewTable");
+    if (b) b.focus();
   }
   function flagLabel() {
     var m = { quoteOverdue: "Quote overdue", quoteToday: "Quote due today", actionOverdue: "Action overdue", stuck: "Stuck over 30 days", openQuoted: "Quoted, negotiating or finalised", won: "PO, sample or PPAP", quotedEver: "Ever quoted" };
@@ -713,13 +730,9 @@
     });
     $("rfqReleasedNote").hidden = state.stage !== "released";
 
-    var fb = $("rfqFlagBar");
-    fb.hidden = !(state.flag && !/^(quoteOverdue|actionOverdue)$/.test(state.flag)) && !state.customerId;
-    if (!fb.hidden) {
-      var lab = [flagLabel()];
-      if (state.customerId) { var c = S.get(state.customerId); lab.push("Customer: " + (c ? c.name : state.customerId)); }
-      $("rfqFlagLabel").textContent = lab.filter(Boolean).join(" · ");
-    }
+    var words = filterWords();
+    $("rfqFilterBar").hidden = !words.length;
+    $("rfqFilterText").textContent = words.join(" · ");
 
     $("rfqBoardWrap").hidden = state.view !== "board";
     $("rfqTableWrap").hidden = state.view !== "table";
@@ -732,7 +745,9 @@
 
     var empty = $("rfqEmpty");
     empty.hidden = list.length > 0;
-    empty.textContent = all.length ? "No RFQs match." : "No RFQs yet. Use + New RFQ, or Import RFQs to bring in the Hub sheet.";
+    $("rfqEmptyText").textContent = !all.length ? "No RFQs yet. Use + New RFQ, or Import RFQs to bring in the Hub sheet."
+      : words.length ? "No RFQs match these filters: " + words.join(" · ") + "." : "No RFQs match.";
+    $("rfqEmptyClear").hidden = !words.length;
     $("rfqFoot").textContent = summary();
     saveState();
   }
@@ -1220,9 +1235,9 @@
     stageBar.appendChild(el("button", { type: "button", class: "chip", dataset: { stage: "" }, "aria-pressed": "false" }, ["All ", el("b", { text: "0" })]));
     STAGES.forEach(function (s) { stageBar.appendChild(el("button", { type: "button", class: "chip", dataset: { stage: s }, "aria-pressed": "false" }, [s + " ", el("b", { text: "0" })])); });
     panel.appendChild(stageBar);
-    panel.appendChild(el("div", { class: "bar", id: "rfqFlagBar", hidden: true }, [
-      el("span", { class: "bar-label", text: "Also" }),
-      el("span", { class: "chip extra-chip" }, [el("span", { id: "rfqFlagLabel" }), el("button", { type: "button", class: "extra-x", id: "rfqFlagClear", text: "×", "aria-label": "Remove this filter", title: "Remove this filter" })])
+    panel.appendChild(el("div", { class: "bar rfq-filtered", id: "rfqFilterBar", role: "status", hidden: true }, [
+      el("span", { class: "rfq-filtered-text" }, [el("b", { text: "Filtered: " }), el("span", { id: "rfqFilterText" })]),
+      el("button", { type: "button", class: "btn-sm", id: "rfqClearFilters", text: "Clear filters" })
     ]));
     panel.appendChild(el("p", { class: "rule", id: "rfqReleasedNote", hidden: true, text: "Released parts are RFQs at Finalised, PO, Sample or PPAP. Please confirm this is the right definition; it can be changed in one place." }));
     panel.appendChild(el("div", { id: "rfqBoardWrap" }, [el("div", { class: "rfq-board", id: "rfqBoard" })]));
@@ -1235,7 +1250,9 @@
         el("tbody", { id: "rfqRows" })
       ])
     ]));
-    panel.appendChild(el("div", { class: "empty", id: "rfqEmpty", hidden: true }));
+    panel.appendChild(el("div", { class: "empty", id: "rfqEmpty", hidden: true }, [
+      el("p", { id: "rfqEmptyText" }), el("button", { type: "button", class: "btn", id: "rfqEmptyClear", text: "Clear filters", hidden: true })
+    ]));
     panel.appendChild(el("p", { class: "foot", id: "rfqFoot" }));
 
     $("rfqViewBoard").addEventListener("click", function () { state.view = "board"; render(); });
@@ -1249,7 +1266,8 @@
     $("rfqChipLost").addEventListener("click", function () { state.showLost = !state.showLost; render(); });
     $("rfqChipUs").addEventListener("click", function () { state.waiting = state.waiting === "us" ? "" : "us"; render(); });
     $("rfqChipCust").addEventListener("click", function () { state.waiting = state.waiting === "customer" ? "" : "customer"; render(); });
-    $("rfqFlagClear").addEventListener("click", function () { state.flag = ""; state.stuckStage = ""; state.customerId = ""; render(); });
+    $("rfqClearFilters").addEventListener("click", clearFilters);
+    $("rfqEmptyClear").addEventListener("click", clearFilters);
     stageBar.addEventListener("click", function (e) {
       var b = e.target.closest ? e.target.closest(".chip[data-stage]") : null;
       if (!b) return;
