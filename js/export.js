@@ -210,7 +210,7 @@
       var inp = el("input", { type: "radio", name: "exScope-" + key, value: p[0], id: "exScope-" + key + "-" + p[0] });
       var txt = el("span", { id: "exScopeText-" + key + "-" + p[0] });
       var lab = el("label", { class: "ex-check", for: inp.id }, [inp, txt]);
-      inp.addEventListener("change", function () { if (inp.checked) { scope[key] = p[0]; saveScope(); } });
+      inp.addEventListener("change", function () { if (inp.checked) { scope[key] = p[0]; saveScope(); render(); } });
       wrap.appendChild(lab);
       out[p[0]] = { input: inp, text: txt, label: lab };
     });

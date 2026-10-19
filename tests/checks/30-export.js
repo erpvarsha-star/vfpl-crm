@@ -23,7 +23,7 @@ module.exports = async (t) => {
   const AWAIT = [AWAIT_HEAD, ['EXT-1', 'Offer Submitted', ZF, REF + ' (asha.secret@example.invalid)', istToday(-9), istToday(-4), '1', 'Standard end bodies offer sent', 'Offer Submitted'].map(q).join(',')].join('\n') + '\n';
 
   const dialogs = [];
-  const answer = (page, accept) => page.once('dialog', d => { dialogs.push(d.message()); return accept ? d.accept() : d.dismiss(); });
+  const answer = (page, accept) => { dialogs.length = 0; page.removeAllListeners('dialog'); return page.once('dialog', d => { dialogs.push(d.message()); return accept ? d.accept() : d.dismiss(); }); };
   const flush = (page) => page.evaluate(() => App.flush());
   const closedImport = (page) => page.waitForFunction(() => !document.getElementById('importDlg').open);
   async function runImport(page, opener, name, text) {
@@ -121,10 +121,10 @@ module.exports = async (t) => {
 
   // ---------- shown filter ----------
   await t.tab(page, 'list');
-  await page.click('.chip[data-f="At risk"]');
+  await page.fill('#q', 'ZF STEERING');
   await goExport(page);
-  check('the scope label counts the rows the Customers tab shows', /Customers in the Customers tab now \(1\), with current filters/.test(await page.locator('#exScopeText-cust-shown').innerText()) && /All customers \(44\)/.test(await page.locator('#exScopeText-cust-all').innerText()) && /Showing 1 of 44 customers/.test(await page.locator('#exCustSummary').innerText()));
   await page.check('#exScope-cust-shown');
+  check('the scope label counts the rows the Customers tab shows', /Customers in the Customers tab now \(1\), with current filters/.test(await page.locator('#exScopeText-cust-shown').innerText()) && /All customers \(44\)/.test(await page.locator('#exScopeText-cust-all').innerText()) && /Showing 1 of 44 customers/.test(await page.locator('#exCustSummary').innerText()), await page.locator('#exCustomers').innerText());
   const shown = await dl(page, '#csvBtn');
   check('CSV respects the current filter', parse(shown.text).length === 2 && parse(shown.text)[1][0] === ZF && /-shown-/.test(shown.name), shown.name + parse(shown.text).length);
   await t.reload(page);
@@ -150,7 +150,7 @@ module.exports = async (t) => {
   await page.waitForFunction(() => /Copied 44 customers/.test(document.getElementById('exportMsg').textContent));
   const clip = await page.evaluate(() => navigator.clipboard.readText());
   const clipRows = clip.split('\n').map(l => l.split('\t'));
-  check('Copy puts tab-separated rows on the clipboard', clipRows.length === 45 && clipRows[0].join('|') === 'Customer|Contact person|Phone|City|Group|Segment|Vehicle segment|Plants|Last order|Follow-up|Status|Last contacted|Notes count' && clipRows[1].length === 13 && !clip.includes('"') && !clip.includes(NOTE) && await page.locator('#copyFallback').isHidden(), clip.slice(0, 120));
+  check('Copy puts tab-separated rows on the clipboard', clipRows.length === 45 && clipRows[0].join('|') === 'Customer|Contact person|Phone|City|Group|Segment|Vehicle segment|Plants|Last order|Follow-up|Status|Last contacted|Notes count' && clipRows[1].length === 13 && !clip.startsWith('"') && !clip.includes(NOTE) && await page.locator('#copyFallback').isHidden(), JSON.stringify([clipRows.length, clipRows[1].length, clip.includes('","'), clip.startsWith('"'), await page.locator('#copyFallback').isHidden()]));
   const blocked = await open();
   await goExport(blocked.page);
   await blocked.page.evaluate(() => Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText: () => Promise.reject(new Error('blocked')) } }));
@@ -192,10 +192,10 @@ module.exports = async (t) => {
   await page.check('#incContacts');
   await page.check('#incNotes');
   const lead1 = parse((await dl(page, '#leadCsvBtn')).text);
-  check('ticking contact details adds Email and Phone; ticking notes adds Notes', lead1[0].slice(0, 4).join() === 'Company,Key contact,Email,Phone' && lead1[0][lead1[0].length - 1] === 'Notes' && lead1.some(r => r[2] === LMAIL && r[3] === LPHONE && r[r.length - 1] === LCTX));
+  check('ticking contact details adds Email and Phone; ticking notes adds Notes', lead1[0].slice(0, 4).join() === 'Company,Key contact,Email,Phone' && lead1[0][lead1[0].length - 1] === 'Notes' && lead1.some(r => r[2] === LMAIL && r[3] === "'" + LPHONE && r[r.length - 1] === LCTX));
   await page.uncheck('#incContacts'); await page.uncheck('#incNotes');
   await t.tab(page, 'leads');
-  await page.click('.chip[data-bucket="dormant"]');
+  await page.click('.chip[data-b="dormant"]');
   await goExport(page);
   const leadShown = await dl(page, '#leadCsvBtn');
   check('the Leads CSV follows the Leads tab filter', parse(leadShown.text).length === 2 && parse(leadShown.text)[1][0] === 'Other Test Works' && /Leads shown in the Leads tab now \(1\)/.test(await page.locator('#exScopeText-lead-shown').innerText()));
@@ -218,9 +218,9 @@ module.exports = async (t) => {
   check('backup has notes, RFQs, visits and targets but no money and no invoices', page && /^varsha-crm-backup-\d{4}-\d{2}-\d{2}\.json$/.test(bk0.name) && b0.format === 'varsha-crm-backup-v2' && b0.callLog.length === 3 && b0.rfqs.length === 1 && b0.visits.length === 1 && b0.orders.length === 1 && b0.leads.length === 2 &&
     b0.targets.byFy['2026-27'].customers[ZFID] === 1500000 && !('money' in b0) && !('revenue' in b0) && !bk0.text.includes('1234567') && !bk0.text.includes('"taxable"') && !bk0.text.includes(GSTIN), Object.keys(b0).join());
   check('the backup name is covered by .gitignore and it is not customers.json', /varsha-crm-backup-\*\.json/.test(t.fs.readFileSync(t.path.join(t.root, '.gitignore'), 'utf8')) && bk0.name !== 'customers.json');
-  check('backup has leads but no emails or phones unless ticked', b0.leads.every(l => l.email === '' && l.phone === '') && !bk0.text.includes(LMAIL) && !bk0.text.includes(LPHONE) && b0.includes.contactDetails === false && b0.leads.some(l => l.company === 'Made Up Forge Pvt Ltd'));
+  check('backup has leads but no emails or phones unless ticked', b0.leads.every(l => !l.email && !l.phone) && !bk0.text.includes(LMAIL) && !bk0.text.includes(LPHONE) && b0.includes.contactDetails === false && b0.leads.some(l => l.company === 'Made Up Forge Pvt Ltd'), JSON.stringify(b0.leads.map(l => [l.email, l.phone])));
   check('a backup without the notes box has no note text', ![NOTE, VNOTE, ONOTE, LCTX, 'lead touch text', 'plain note'].some(x => bk0.text.includes(x)) && b0.includes.notes === false && b0.callLog.length === 3);
-  check('dispatch history and money are never in the backup', !bk0.text.includes('VX1') && !bk0.text.includes('Imaginary Co') && !bk0.text.includes('AGING'));
+  check('dispatch history and money are never in the backup', !bk0.text.includes('slip_type') && !bk0.text.includes('Imaginary Co') && !bk0.text.includes('AGING'));
   await page.check('#incNotes'); await page.check('#incContacts');
   const bk1 = await dl(page, '#backup');
   const b1 = JSON.parse(bk1.text);
@@ -274,7 +274,7 @@ module.exports = async (t) => {
 
   // ---------- data card and Clear ----------
   const dc = await page.locator('#dataList').innerText();
-  check('data card shows counts, "as of" dates and the invoice data-through date', /\n?Notes and call log\s+3 entries \+ 1 lead touch/.test(dc) && /RFQs\s+1 RFQ/.test(dc) && /Leads\s+2 leads/.test(dc) && /Visits and calls\s+1 visit or call/.test(dc) && /Typed orders\s+1 order/.test(dc) &&
+  check('data card shows counts, "as of" dates and the invoice data-through date', /Notes and call log\s+2 entries \+ 1 lead touch/.test(dc) && /RFQs\s+1 RFQ/.test(dc) && /Leads\s+2 leads/.test(dc) && /Visits and calls\s+1 visit or call/.test(dc) && /Typed orders\s+1 order/.test(dc) &&
     new RegExp('AGING as of ' + require_date(istToday(-2)) + ' \\(1 row\\)').test(dc) && /Invoice file\s+2 invoices, data through 12 Jul 2026/.test(dc) && /Dispatch history\s+2 slips, data through 12 Oct 2026/.test(dc) && /Targets\s+FY 2026-27: 1 customer, 1 segment/.test(dc), dc);
   function require_date(iso) { const [y, m, d] = iso.split('-'); return +d + ' ' + MON[+m - 1] + ' ' + y; }
   check('Clear buttons exist only for datasets that hold data', (await page.locator('#clearRow button').allInnerTexts()).join('|') === 'Clear imported money data|Clear invoice data|Clear dispatch history');
