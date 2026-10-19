@@ -29,4 +29,4 @@ Independent project. Work only in this repo (`vfpl-crm`). Never touch `vfpl-dash
 - A global `margin: 0` reset breaks `<dialog>` centring. Keep `dialog { margin: auto; }`.
 - Opening `index.html` by double-click cannot fetch `customers.json`. Previews inject the data as `window.CRM_DATA`.
 - `pkill -f <text>` can kill the shell that contains that text. Kill by PID.
-- The sheet's `INVOICE_REGISTER` stops at 1,200 rows (12-Jul-2026), so "last order" may be out of date.
+- The sheet's `INVOICE_REGISTER` holds 1,040 invoices and its data ends on 12-Jul-2026 (the grid has empty rows below, so it is not a row limit). Invoices after that date may not have been loaded, so "last order" may be out of date. Always show "data through <last invoice date>".
