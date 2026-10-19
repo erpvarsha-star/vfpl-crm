@@ -613,15 +613,16 @@
       var open = mobile ? state.closed.indexOf(stage) === -1 : true;
       var det = el("details", { class: "rfq-col", role: "group", "aria-labelledby": hid, open: open, dataset: { stage: stage } });
       var head = el("summary", null, [el("h3", { id: hid, text: stage + " (" + cards.length + ")" }), any ? Ui.amountEl(sum, "col-val", true) : null]);
-      head.addEventListener("click", function (e) { if (!narrow()) e.preventDefault(); });
-      det.appendChild(head);
-      det.addEventListener("toggle", function () {
-        if (!narrow()) return;
-        var i = state.closed.indexOf(stage);
-        if (det.open && i !== -1) state.closed.splice(i, 1);
-        else if (!det.open && i === -1) state.closed.push(stage);
+      /* The open/closed choice is saved synchronously, in the click itself. (The details "toggle" event is queued
+         and also fires for elements that a re-render has already replaced, so it must not be used to save state.) */
+      head.addEventListener("click", function (e) {
+        if (!narrow()) { e.preventDefault(); return; }
+        var i = state.closed.indexOf(stage), willOpen = !det.open;
+        if (willOpen && i !== -1) state.closed.splice(i, 1);
+        else if (!willOpen && i === -1) state.closed.push(stage);
         saveState();
       });
+      det.appendChild(head);
       var body = el("div", { class: "col-cards" });
       cards.forEach(function (r) { body.appendChild(buildCard(r, today, byId)); });
       if (!cards.length) body.appendChild(el("p", { class: "col-empty", text: "None" }));
