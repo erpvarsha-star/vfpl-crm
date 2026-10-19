@@ -3,593 +3,81 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self'; base-uri 'none'; form-action 'self'; object-src 'none'">
 <title>Varsha CRM</title>
-<style>
-  :root {
-    --navy: #0f2340;
-    --navy-deep: #091629;
-    --navy-line: #1d3a63;
-    --orange: #f26b1d;
-    --orange-hover: #ff7f33;
-    --text: #ffffff;
-    --text-dim: #a9bad3;
-    --paper: #f4f6fa;
-    --card: #ffffff;
-    --ink: #14243d;
-    --ink-dim: #5b6b83;
-    --line: #dde3ee;
-    --ok: #1a7f4b;
-    --ok-bg: #e2f4ea;
-    --warn: #b45309;
-    --warn-bg: #fdecd8;
-    --risk: #b42318;
-    --risk-bg: #fde4e1;
-  }
-  * { box-sizing: border-box; margin: 0; padding: 0; }
-  [hidden] { display: none !important; }
-  body {
-    background: var(--paper);
-    color: var(--ink);
-    font-family: "Segoe UI", system-ui, -apple-system, Roboto, Helvetica, Arial, sans-serif;
-    min-height: 100vh;
-  }
-
-  /* ---------- header ---------- */
-  header {
-    background: radial-gradient(ellipse at 30% 0%, var(--navy) 0%, var(--navy-deep) 80%);
-    background-color: var(--navy-deep);
-    color: var(--text);
-    padding: 36px 16px 32px;
-  }
-  .wrap { max-width: 1180px; margin: 0 auto; }
-  .head-row { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 20px; }
-  .company { font-size: .85rem; letter-spacing: .22em; text-transform: uppercase; color: var(--text-dim); }
-  h1 { font-size: clamp(2.6rem, 9vw, 4.6rem); font-weight: 800; line-height: 1; letter-spacing: -.02em; margin: 8px 0 10px; }
-  h1 span { color: var(--orange); }
-  .date { font-size: 1.05rem; font-weight: 600; color: var(--text-dim); }
-  .btn-add {
-    background: var(--orange); color: #fff; border: 0; cursor: pointer;
-    font: inherit; font-size: 1.15rem; font-weight: 700;
-    padding: 16px 30px; border-radius: 12px;
-    box-shadow: 0 8px 24px rgba(242,107,29,.35);
-    transition: background .15s, transform .15s;
-  }
-  .btn-add:hover { background: var(--orange-hover); transform: translateY(-2px); }
-  .btn-add:focus-visible, .chip:focus-visible, .btn:focus-visible, th button:focus-visible, .clr:focus-visible { outline: 3px solid var(--orange); outline-offset: 3px; }
-
-  /* ---------- filters ---------- */
-  main { max-width: 1180px; margin: 0 auto; padding: 20px 16px 48px; }
-  .bar { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin-bottom: 12px; }
-  .bar-label { font-size: .75rem; font-weight: 800; letter-spacing: .1em; text-transform: uppercase; color: var(--ink-dim); min-width: 78px; }
-  .chip {
-    font: inherit; font-size: .95rem; font-weight: 600; cursor: pointer;
-    padding: 8px 15px; border-radius: 999px;
-    border: 1.5px solid var(--line); background: var(--card); color: var(--ink);
-  }
-  .chip b { margin-left: 6px; }
-  .chip[aria-pressed="true"] { background: var(--navy); border-color: var(--navy); color: #fff; }
-  .chip.danger.has { border-color: var(--risk); color: var(--risk); background: var(--risk-bg); }
-  .chip.danger[aria-pressed="true"] { background: var(--risk); border-color: var(--risk); color: #fff; }
-  .search {
-    margin-left: auto; flex: 1 1 220px; max-width: 320px;
-    font: inherit; padding: 10px 14px; border-radius: 10px; border: 1.5px solid var(--line); background: var(--card); color: var(--ink);
-  }
-  .search:focus { outline: 3px solid var(--orange); outline-offset: 1px; border-color: var(--orange); }
-  .rule { font-size: .85rem; color: var(--ink-dim); margin: 4px 0 14px; line-height: 1.5; }
-  .banner { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; margin: 0 0 12px; padding: 10px 14px; border-radius: 10px; background: var(--warn-bg); color: var(--warn); font-size: .9rem; font-weight: 600; }
-  .banner.bad { background: var(--risk-bg); color: var(--risk); }
-  .banner .btn { padding: 7px 14px; font-size: .85rem; }
-
-  /* ---------- table ---------- */
-  .card { background: var(--card); border: 1px solid var(--line); border-radius: 14px; overflow: hidden; }
-  table { width: 100%; border-collapse: collapse; }
-  th, td { text-align: left; padding: 12px 12px; vertical-align: middle; }
-  thead th { background: var(--navy); color: #fff; font-size: .78rem; letter-spacing: .08em; text-transform: uppercase; font-weight: 700; white-space: nowrap; }
-  th button { all: unset; cursor: pointer; }
-  tbody tr + tr td { border-top: 1px solid var(--line); }
-  tbody tr:hover td { background: #f8f9fc; }
-  tbody tr.overdue td { background: #fff5f4; }
-  tbody tr.overdue td:first-child { box-shadow: inset 4px 0 0 var(--risk); }
-  td.name { font-weight: 700; }
-  .tag { display: inline-block; margin-left: 8px; font-size: .7rem; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; padding: 2px 8px; border-radius: 6px; background: var(--risk-bg); color: var(--risk); vertical-align: middle; }
-  .muted { color: var(--ink-dim); }
-  .guess { color: var(--ink-dim); font-style: italic; }
-  td a { color: var(--navy); text-decoration: none; border-bottom: 1px dotted var(--ink-dim); }
-  td a:hover { color: var(--orange); border-color: var(--orange); }
-  .s-active { background: var(--ok-bg); color: var(--ok); }
-  .s-follow { background: var(--warn-bg); color: var(--warn); }
-  .s-risk   { background: var(--risk-bg); color: var(--risk); }
-  select.st { appearance: none; -webkit-appearance: none; cursor: pointer; border: 0; font: inherit; font-weight: 700; font-size: .85rem;
-    padding: 6px 30px 6px 14px; border-radius: 999px; width: auto;
-    background-image: linear-gradient(45deg, transparent 50%, currentColor 50%), linear-gradient(135deg, currentColor 50%, transparent 50%);
-    background-position: calc(100% - 15px) 55%, calc(100% - 10px) 55%; background-size: 5px 5px, 5px 5px; background-repeat: no-repeat; }
-  select.st:focus-visible { outline: 3px solid var(--orange); outline-offset: 2px; }
-  .fu { display: flex; flex-direction: column; align-items: flex-start; gap: 3px; }
-  .fu-row { display: flex; align-items: center; gap: 4px; }
-  .fu input { width: auto; padding: 6px 8px; font-size: .9rem; border-radius: 8px; }
-  .fu.over input { border-color: var(--risk); background: var(--risk-bg); color: var(--risk); font-weight: 700; }
-  .fu.today input { border-color: var(--warn); background: var(--warn-bg); color: var(--warn); font-weight: 700; }
-  .rel { font-size: .8rem; font-weight: 600; color: var(--ink-dim); }
-  .over .rel { color: var(--risk); font-weight: 800; }
-  .today .rel { color: var(--warn); font-weight: 800; }
-  .clr, .rm { font: inherit; border: 0; background: none; color: var(--ink-dim); cursor: pointer; font-size: 1.15rem; line-height: 1; padding: 4px 7px; border-radius: 6px; }
-  .clr:hover, .rm:hover { color: var(--risk); background: var(--risk-bg); }
-  .empty { padding: 40px 16px; text-align: center; color: var(--ink-dim); }
-  .foot { margin-top: 16px; font-size: .85rem; color: var(--ink-dim); }
-
-  /* ---------- dialog / form ---------- */
-  dialog { margin: auto; border: 0; border-radius: 16px; padding: 0; overflow: hidden; width: min(480px, calc(100vw - 32px)); box-shadow: 0 24px 60px rgba(9,22,41,.45); }
-  dialog::backdrop { background: rgba(9,22,41,.6); }
-  .dlg-head { background: var(--navy); color: #fff; padding: 18px 22px; font-size: 1.2rem; font-weight: 800; }
-  form { padding: 20px 22px 22px; display: grid; gap: 14px; }
-  label { display: grid; gap: 5px; min-width: 0; font-size: .85rem; font-weight: 700; color: var(--ink); }
-  input, select { width: 100%; min-width: 0; font: inherit; font-size: 1rem; padding: 10px 12px; border: 1.5px solid var(--line); border-radius: 10px; color: var(--ink); background: #fff; }
-  input:focus, select:focus { outline: 3px solid var(--orange); outline-offset: 1px; border-color: var(--orange); }
-  .two { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 12px; }
-  .actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 4px; }
-  .btn { font: inherit; font-weight: 700; padding: 11px 20px; border-radius: 10px; border: 1.5px solid var(--line); background: #fff; color: var(--ink); cursor: pointer; }
-  .btn.primary { background: var(--orange); border-color: var(--orange); color: #fff; }
-  .btn.primary:hover { background: var(--orange-hover); }
-  .note { font-size: .8rem; color: var(--ink-dim); }
-
-  /* ---------- phone: rows become cards ---------- */
-  @media (max-width: 860px) {
-    thead { display: none; }
-    table, tbody, tr, td { display: block; width: 100%; }
-    tbody tr { padding: 14px 16px; }
-    tbody tr + tr { border-top: 1px solid var(--line); }
-    tbody tr + tr td, tbody tr td { border-top: 0; }
-    tbody tr.overdue td, tbody tr:hover td { background: none; }
-    tbody tr.overdue { background: #fff5f4; box-shadow: inset 4px 0 0 var(--risk); }
-    tbody tr.overdue td:first-child { box-shadow: none; }
-    td { padding: 4px 0; display: flex; justify-content: space-between; align-items: center; gap: 16px; }
-    td::before { content: attr(data-label); color: var(--ink-dim); font-size: .8rem; font-weight: 600; flex: none; }
-    td.name { display: block; font-size: 1.05rem; padding-bottom: 6px; }
-    td.name::before { content: none; }
-    td.act { justify-content: flex-end; }
-    td.act::before { content: none; }
-    .fu { align-items: flex-end; }
-    .search { max-width: none; margin-left: 0; flex-basis: 100%; }
-    .bar-label { flex-basis: 100%; }
-    .two { grid-template-columns: 1fr; }
-    .btn-add { width: 100%; }
-  }
-</style>
+<link rel="icon" type="image/png" sizes="64x64" href="assets/favicon-64.png">
+<link rel="stylesheet" href="css/base.css?v=2">
+<link rel="stylesheet" href="css/customers.css?v=2">
+<link rel="stylesheet" href="css/money.css?v=2">
+<link rel="stylesheet" href="css/rfqs.css?v=2">
+<link rel="stylesheet" href="css/schedule.css?v=2">
+<link rel="stylesheet" href="css/revenue.css?v=2">
+<link rel="stylesheet" href="css/report.css?v=2">
+<link rel="stylesheet" href="css/dashboard.css?v=2">
+<link rel="stylesheet" href="css/export.css?v=2">
 </head>
 <body>
-<header>
-  <div class="wrap head-row">
-    <div>
-      <div class="company">Varsha Forgings</div>
-      <h1>Varsha <span>CRM</span></h1>
-      <div class="date" id="today"></div>
+<div id="app">
+  <header>
+    <div class="wrap head-row">
+      <div class="brand">
+        <span class="logo-badge"><img src="assets/varsha-logo.jpg" alt="Varsha Forgings" width="64" height="64"></span>
+        <div>
+          <div class="company">Varsha Forgings</div>
+          <h1>Varsha <span>CRM</span></h1>
+          <div class="date" id="today"></div>
+        </div>
+      </div>
+      <button class="btn-add" id="openForm" type="button">+ Add customer</button>
     </div>
-    <button class="btn-add" id="openForm" type="button">+ Add customer</button>
-  </div>
-</header>
+  </header>
 
-<main>
-  <div class="bar" role="group" aria-label="Filter by follow-up">
-    <span class="bar-label">Follow-ups</span>
-    <button class="chip" data-v="all" aria-pressed="true">All <b id="v-all">0</b></button>
-    <button class="chip danger" data-v="overdue" aria-pressed="false">Overdue <b id="v-overdue">0</b></button>
-    <button class="chip" data-v="today" aria-pressed="false">Due today <b id="v-today">0</b></button>
-    <button class="chip" data-v="week" aria-pressed="false">Next 7 days <b id="v-week">0</b></button>
-    <button class="chip" data-v="none" aria-pressed="false">No follow-up set <b id="v-none">0</b></button>
-  </div>
-  <div class="bar" role="group" aria-label="Filter by status">
-    <span class="bar-label">Status</span>
-    <button class="chip" data-f="all" aria-pressed="true">All <b id="n-all">0</b></button>
-    <button class="chip" data-f="Active" aria-pressed="false">Active <b id="n-Active">0</b></button>
-    <button class="chip" data-f="Follow up" aria-pressed="false">Follow up <b id="n-Follow up">0</b></button>
-    <button class="chip" data-f="At risk" aria-pressed="false">At risk <b id="n-At risk">0</b></button>
-    <input class="search" id="q" type="search" placeholder="Search name, contact, phone, city" aria-label="Search customers">
-  </div>
-  <p class="rule" id="rule"></p>
-  <div class="banner bad" id="storageWarn" hidden role="alert">
-    This browser is blocking saved changes (a private window, or storage turned off). Changes will be lost when you refresh. Use "Download customers.json" to keep them.
-  </div>
-  <div class="banner" id="unsaved" hidden>
-    <span id="unsavedMsg"></span>
-    <button class="btn" type="button" id="export">Download customers.json</button>
+  <div class="tabbar">
+    <!-- To add a module: one button here, one section below, one css link, one script tag. Tab order is the order in this list. -->
+    <nav class="tabs" role="tablist" aria-label="Sections">
+      <button class="tab" role="tab" id="tab-dash" aria-controls="panel-dash" aria-selected="false" tabindex="-1">Dashboard</button>
+      <button class="tab" role="tab" id="tab-list" aria-controls="panel-list" aria-selected="false" tabindex="-1">Customers</button>
+      <button class="tab" role="tab" id="tab-rfqs" aria-controls="panel-rfqs" aria-selected="false" tabindex="-1">RFQs</button>
+      <button class="tab" role="tab" id="tab-schedule" aria-controls="panel-schedule" aria-selected="false" tabindex="-1">Schedule</button>
+      <button class="tab" role="tab" id="tab-export" aria-controls="panel-export" aria-selected="false" tabindex="-1">Export</button>
+    </nav>
   </div>
 
-  <div class="card">
-    <table>
-      <thead>
-        <tr>
-          <th><button data-sort="name">Customer</button></th>
-          <th>Contact person</th>
-          <th>Phone</th>
-          <th>City</th>
-          <th><button data-sort="last">Last order</button></th>
-          <th><button data-sort="follow">Follow-up</button></th>
-          <th><button data-sort="status">Status</button></th>
-          <th></th>
-        </tr>
-      </thead>
-      <tbody id="rows"></tbody>
-    </table>
-    <div class="empty" id="empty" hidden>No customers match.</div>
-  </div>
-  <p class="foot" id="foot"></p>
-</main>
-
-<dialog id="dlg" aria-labelledby="dlgTitle">
-  <div class="dlg-head" id="dlgTitle">Add customer</div>
-  <form id="form" method="dialog">
-    <label>Customer name *
-      <input name="name" required maxlength="120" autocomplete="off">
-    </label>
-    <div class="two">
-      <label>Contact person
-        <input name="contact" maxlength="80" autocomplete="off">
-      </label>
-      <label>Phone
-        <input name="phone" type="tel" maxlength="30" autocomplete="off">
-      </label>
+  <main>
+    <div class="banner bad" id="storageWarn" hidden role="alert">
+      <span class="banner-text">This browser is blocking saved changes (a private window, or storage turned off). Changes will be lost when you refresh. Use "Download customers.json" to keep them.</span>
     </div>
-    <div class="two">
-      <label>City
-        <input name="city" maxlength="60" autocomplete="off">
-      </label>
-      <label>Last order date
-        <input name="last" type="date">
-      </label>
+    <div class="banner info" id="notice" hidden role="status">
+      <span class="banner-text"></span>
+      <button class="banner-x" type="button" aria-label="Dismiss message">×</button>
     </div>
-    <div class="two">
-      <label>Follow-up date
-        <input name="followUp" type="date">
-      </label>
-      <label>Status
-        <select name="status">
-          <option>Active</option>
-          <option>Follow up</option>
-          <option>At risk</option>
-        </select>
-      </label>
+    <div class="banner bad" id="syncErr" hidden role="alert">
+      <span class="banner-text"></span>
+      <button class="banner-x" type="button" aria-label="Dismiss message">×</button>
     </div>
-    <p class="note">Saved in this browser first. Use "Download customers.json" and commit it to share the change.</p>
-    <div class="actions">
-      <button class="btn" type="button" id="cancel">Cancel</button>
-      <button class="btn primary" type="submit">Save customer</button>
-    </div>
-  </form>
-</dialog>
 
-<script>
-/* ---------------------------------------------------------------
-   Customer data lives in customers.json (in git). Every edit made
-   here (new customer, status, follow-up date) and the filters you
-   picked are saved in this browser, so a refresh never loses them.
-   Download customers.json and commit it to share the edits.
-   --------------------------------------------------------------- */
-var LOCAL_KEY = "varsha-crm-local-v2";
-var VIEW_KEY = "varsha-crm-view-v1";
-var ORDER = { "At risk": 0, "Follow up": 1, "Active": 2 };
-var STATUSES = ["Active", "Follow up", "At risk"];
-var VIEWS = ["all", "overdue", "today", "week", "none"];
-var SORTS = ["name", "last", "follow", "status"];
-var ISO = /^\d{4}-\d{2}-\d{2}$/;
+    <section id="panel-dash" class="tabpanel" role="tabpanel" aria-labelledby="tab-dash" hidden></section>
+    <section id="panel-list" class="tabpanel" role="tabpanel" aria-labelledby="tab-list" hidden></section>
+    <section id="panel-rfqs" class="tabpanel" role="tabpanel" aria-labelledby="tab-rfqs" hidden></section>
+    <section id="panel-schedule" class="tabpanel" role="tabpanel" aria-labelledby="tab-schedule" hidden></section>
+    <section id="panel-export" class="tabpanel" role="tabpanel" aria-labelledby="tab-export" hidden></section>
+  </main>
+</div>
+<div id="live" class="sr-only" aria-live="polite"></div>
 
-var $ = function (id) { return document.getElementById(id); };
-var storageOK = true;
-function lsGet(k) { try { return localStorage.getItem(k); } catch (e) { storageOK = false; return null; } }
-function lsSet(k, v) { try { localStorage.setItem(k, v); } catch (e) { storageOK = false; } }
-
-/* Dates are always India time, whatever the device clock zone. */
-function todayISO() { return new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" }); }
-function dayNum(iso) { return Math.floor(Date.parse(iso + "T00:00:00Z") / 86400000); }
-function fmtDate(iso) {
-  if (!iso) return "";
-  return new Date(iso + "T00:00:00Z").toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric", timeZone: "UTC" });
-}
-function fmtPhone(p) {
-  var d = String(p || "").replace(/\s+/g, "");
-  return /^\d{10}$/.test(d) ? d.slice(0, 5) + " " + d.slice(5) : String(p || "").trim();
-}
-function iso(v) { return ISO.test(v || "") ? v : ""; }
-
-/* follow-up kind: overdue | today | week | later | none */
-function fuKind(c, today) {
-  if (!c.followUp) return "none";
-  var d = dayNum(c.followUp) - dayNum(today);
-  return d < 0 ? "overdue" : d === 0 ? "today" : d <= 7 ? "week" : "later";
-}
-function fuText(c, today) {
-  if (!c.followUp) return "";
-  var d = dayNum(c.followUp) - dayNum(today);
-  if (d < 0) return "Overdue by " + (-d) + (d === -1 ? " day" : " days");
-  if (d === 0) return "Due today";
-  if (d === 1) return "Tomorrow";
-  return "In " + d + " days";
-}
-
-var customers = [];
-var baseStatus = {}, baseFollow = {};
-var local = { added: [], status: {}, follow: {} };
-var loadedNote = "";
-
-function readLocal() {
-  try {
-    var v = JSON.parse(lsGet(LOCAL_KEY) || "{}") || {};
-    local.added = Array.isArray(v.added) ? v.added : [];
-    local.status = v.status && typeof v.status === "object" ? v.status : {};
-    local.follow = v.follow && typeof v.follow === "object" ? v.follow : {};
-  } catch (e) { /* unreadable saved data: start clean rather than break the page */ }
-}
-function writeLocal() { lsSet(LOCAL_KEY, JSON.stringify(local)); }
-
-function clean(c, added) {
-  return { name: String(c.name || "").trim(), contact: c.contact || "", contactFrom: c.contactFrom || "",
-           city: c.city || "", state: c.state || "", phone: c.phone || "", last: iso(c.last), followUp: iso(c.followUp),
-           status: ORDER.hasOwnProperty(c.status) ? c.status : "Active", disputed: !!c.disputed, added: !!added };
-}
-function build(base) {
-  readLocal();
-  var names = {};
-  customers = base.map(function (c) { names[c.name] = 1; return clean(c, false); });
-  customers.forEach(function (c) { baseStatus[c.name] = c.status; baseFollow[c.name] = c.followUp; });
-  // drop saved leftovers that the committed file already contains
-  local.added = local.added.filter(function (c) { return c && c.name && !names[c.name]; });
-  var byName = {};
-  customers.forEach(function (c) { byName[c.name] = c; });
-  Object.keys(local.status).forEach(function (n) {
-    var c = byName[n];
-    if (!c || c.status === local.status[n] || !ORDER.hasOwnProperty(local.status[n])) delete local.status[n];
-    else c.status = local.status[n];
-  });
-  Object.keys(local.follow).forEach(function (n) {
-    var c = byName[n], v = iso(local.follow[n]);
-    if (!c || c.followUp === v) delete local.follow[n];
-    else c.followUp = v;
-  });
-  local.added.forEach(function (c) { customers.push(clean(c, true)); });
-  writeLocal();
-}
-
-/* ---------- view state (filters, search, sort) survives refresh ---------- */
-var state = { view: "all", filter: "all", q: "", sort: "follow", dir: 1 };
-function loadView() {
-  try {
-    var v = JSON.parse(lsGet(VIEW_KEY) || "{}") || {};
-    if (VIEWS.indexOf(v.view) !== -1) state.view = v.view;
-    if (v.filter === "all" || ORDER.hasOwnProperty(v.filter)) state.filter = v.filter;
-    if (typeof v.q === "string") state.q = v.q;
-    if (SORTS.indexOf(v.sort) !== -1) state.sort = v.sort;
-    if (v.dir === 1 || v.dir === -1) state.dir = v.dir;
-  } catch (e) {}
-}
-function saveView() { lsSet(VIEW_KEY, JSON.stringify(state)); }
-function syncControls() {
-  document.querySelectorAll(".chip[data-v]").forEach(function (b) { b.setAttribute("aria-pressed", String(b.dataset.v === state.view)); });
-  document.querySelectorAll(".chip[data-f]").forEach(function (b) { b.setAttribute("aria-pressed", String(b.dataset.f === state.filter)); });
-  $("q").value = state.q;
-}
-
-/* ---------- edits ---------- */
-function setStatus(c, v) {
-  c.status = v;
-  if (c.added) local.added.forEach(function (a) { if (a.name === c.name) a.status = v; });
-  else if (baseStatus[c.name] === v) delete local.status[c.name];
-  else local.status[c.name] = v;
-  writeLocal(); render();
-}
-function setFollow(c, v) {
-  v = iso(v);
-  c.followUp = v;
-  if (c.added) local.added.forEach(function (a) { if (a.name === c.name) a.followUp = v; });
-  else if (baseFollow[c.name] === v) delete local.follow[c.name];
-  else local.follow[c.name] = v;
-  writeLocal(); render();
-}
-
-/* ---------- render ---------- */
-function cls(status) { return status === "Active" ? "s-active" : status === "Follow up" ? "s-follow" : "s-risk"; }
-function cell(tr, label, klass) {
-  var td = document.createElement("td");
-  td.dataset.label = label;
-  if (klass) td.className = klass;
-  tr.appendChild(td);
-  return td;
-}
-function dash(td) { td.textContent = "—"; td.classList.add("muted"); }
-
-function render() {
-  var today = todayISO();
-  var q = state.q.trim().toLowerCase();
-  var list = customers.filter(function (c) {
-    if (state.filter !== "all" && c.status !== state.filter) return false;
-    if (state.view !== "all" && fuKind(c, today) !== state.view) return false;
-    return !q || (c.name + " " + c.contact + " " + c.phone + " " + c.city + " " + c.state).toLowerCase().indexOf(q) !== -1;
-  });
-  list.sort(function (a, b) {
-    var r;
-    if (state.sort === "name") r = a.name.toLowerCase().localeCompare(b.name.toLowerCase()) * state.dir;
-    else if (state.sort === "last") r = (b.last || "").localeCompare(a.last || "") * state.dir;
-    else if (state.sort === "status") r = (ORDER[a.status] - ORDER[b.status]) * state.dir;
-    else if (!a.followUp && !b.followUp) r = 0;           // soonest follow-up first, undated last
-    else if (!a.followUp) r = 1;
-    else if (!b.followUp) r = -1;
-    else r = a.followUp.localeCompare(b.followUp) * state.dir;
-    return r || (b.last || "").localeCompare(a.last || "") || a.name.localeCompare(b.name);
-  });
-
-  var body = $("rows");
-  body.textContent = "";
-  list.forEach(function (c) {
-    var kind = fuKind(c, today);
-    var tr = document.createElement("tr");
-    if (kind === "overdue") tr.className = "overdue";
-
-    var n = cell(tr, "Customer", "name");
-    n.appendChild(document.createTextNode(c.name));
-    if (c.disputed) { var t = document.createElement("span"); t.className = "tag"; t.textContent = "Disputed"; n.appendChild(t); }
-
-    var p = cell(tr, "Contact person");
-    if (!c.contact) dash(p);
-    else {
-      p.textContent = c.contact;
-      if (c.contactFrom === "email") { p.classList.add("guess"); p.title = "Guessed from the email address"; }
-    }
-
-    var ph = cell(tr, "Phone");
-    if (!c.phone) dash(ph);
-    else if (/^\d{10}$/.test(c.phone.replace(/\s+/g, ""))) {
-      var a = document.createElement("a");
-      a.href = "tel:+91" + c.phone.replace(/\s+/g, "");
-      a.textContent = fmtPhone(c.phone);
-      ph.appendChild(a);
-    } else ph.textContent = fmtPhone(c.phone);
-
-    var ci = cell(tr, "City");
-    if (c.city) ci.textContent = c.city;
-    else if (c.state) { ci.textContent = c.state; ci.classList.add("guess"); ci.title = "State from the GST number; city not known"; }
-    else dash(ci);
-
-    var l = cell(tr, "Last order");
-    c.last ? l.textContent = fmtDate(c.last) : dash(l);
-
-    var fcell = cell(tr, "Follow-up");
-    var fu = document.createElement("div");
-    fu.className = "fu" + (kind === "overdue" ? " over" : kind === "today" ? " today" : "");
-    var row = document.createElement("div"); row.className = "fu-row";
-    var inp = document.createElement("input");
-    inp.type = "date"; inp.value = c.followUp;
-    inp.setAttribute("aria-label", "Follow-up date for " + c.name);
-    inp.addEventListener("change", function () { setFollow(c, inp.value); });
-    row.appendChild(inp);
-    if (c.followUp) {
-      var clr = document.createElement("button");
-      clr.type = "button"; clr.className = "clr"; clr.textContent = "×";
-      clr.title = "Clear follow-up date";
-      clr.setAttribute("aria-label", "Clear follow-up date for " + c.name);
-      clr.addEventListener("click", function () { setFollow(c, ""); });
-      row.appendChild(clr);
-    }
-    fu.appendChild(row);
-    if (c.followUp) { var rel = document.createElement("span"); rel.className = "rel"; rel.textContent = fuText(c, today); fu.appendChild(rel); }
-    fcell.appendChild(fu);
-
-    var s = cell(tr, "Status");
-    var sel = document.createElement("select");
-    sel.className = "st " + cls(c.status);
-    sel.setAttribute("aria-label", "Status for " + c.name);
-    STATUSES.forEach(function (o) {
-      var op = document.createElement("option"); op.textContent = o; op.selected = o === c.status; sel.appendChild(op);
-    });
-    sel.addEventListener("change", function () { setStatus(c, sel.value); });
-    s.appendChild(sel);
-
-    var act = cell(tr, "", "act");
-    if (c.added) {
-      var x = document.createElement("button");
-      x.className = "rm"; x.type = "button"; x.textContent = "×";
-      x.setAttribute("aria-label", "Remove " + c.name);
-      x.addEventListener("click", function () {
-        if (confirm("Remove " + c.name + " from this list?")) {
-          customers.splice(customers.indexOf(c), 1);
-          local.added = local.added.filter(function (o) { return o.name !== c.name; });
-          writeLocal(); render();
-        }
-      });
-      act.appendChild(x);
-    }
-    body.appendChild(tr);
-  });
-  $("empty").textContent = "No customers match.";
-  $("empty").hidden = list.length > 0;
-
-  var counts = { all: customers.length, "Active": 0, "Follow up": 0, "At risk": 0 };
-  var vc = { all: customers.length, overdue: 0, today: 0, week: 0, none: 0 };
-  customers.forEach(function (c) { counts[c.status]++; var k = fuKind(c, today); if (vc.hasOwnProperty(k)) vc[k]++; });
-  Object.keys(counts).forEach(function (k) { $("n-" + k).textContent = counts[k]; });
-  Object.keys(vc).forEach(function (k) { $("v-" + k).textContent = vc[k]; });
-  document.querySelector('.chip[data-v="overdue"]').classList.toggle("has", vc.overdue > 0);
-
-  $("foot").textContent = "Showing " + list.length + " of " + customers.length + " customers.";
-  var edits = Object.keys(local.status).length + Object.keys(local.follow).length + local.added.length;
-  $("unsaved").hidden = edits === 0;
-  $("unsavedMsg").textContent = edits + " change" + (edits === 1 ? "" : "s") + " saved in this browser only.";
-  $("storageWarn").hidden = storageOK;
-  saveView();
-}
-
-$("today").textContent = new Date().toLocaleDateString("en-IN", {
-  weekday: "long", day: "numeric", month: "long", year: "numeric", timeZone: "Asia/Kolkata"
-});
-$("rule").textContent = "Pick a status and a follow-up date on each row. A follow-up date in the past turns red. Last order is the customer's latest invoice date in the Collections sheet (it runs to 12 Jul 2026). Grey italic contact names are guessed from email addresses, and grey states come from GST numbers.";
-
-document.querySelectorAll(".chip[data-v]").forEach(function (b) {
-  b.addEventListener("click", function () { state.view = b.dataset.v; syncControls(); render(); });
-});
-document.querySelectorAll(".chip[data-f]").forEach(function (b) {
-  b.addEventListener("click", function () { state.filter = b.dataset.f; syncControls(); render(); });
-});
-$("q").addEventListener("input", function (e) { state.q = e.target.value; render(); });
-document.querySelectorAll("th button").forEach(function (b) {
-  b.addEventListener("click", function () {
-    var k = b.dataset.sort;
-    state.dir = state.sort === k ? -state.dir : 1;
-    state.sort = k;
-    render();
-  });
-});
-
-/* ---------- add customer ---------- */
-var dlg = $("dlg"), form = $("form");
-$("openForm").addEventListener("click", function () { form.reset(); dlg.showModal(); form.name.focus(); });
-$("cancel").addEventListener("click", function () { dlg.close(); });
-form.addEventListener("submit", function (e) {
-  e.preventDefault();
-  var f = new FormData(form);
-  var name = String(f.get("name")).trim();
-  if (!name) return;
-  if (customers.some(function (c) { return c.name.toLowerCase() === name.toLowerCase(); })) {
-    alert(name + " is already in the list."); return;
-  }
-  var c = clean({ name: name, contact: String(f.get("contact")).trim(), phone: String(f.get("phone")).trim(),
-                  city: String(f.get("city")).trim(), last: String(f.get("last") || ""),
-                  followUp: String(f.get("followUp") || ""), status: String(f.get("status")) }, true);
-  customers.push(c);
-  local.added.push({ name: c.name, contact: c.contact, phone: c.phone, city: c.city, last: c.last, followUp: c.followUp, status: c.status });
-  writeLocal();
-  dlg.close();
-  state.view = "all"; state.filter = "all"; state.q = "";
-  syncControls();
-  render();
-});
-
-/* ---------- export + load ---------- */
-$("export").addEventListener("click", function () {
-  var out = customers.map(function (c) {
-    return { name: c.name, contact: c.contact, contactFrom: c.contactFrom, city: c.city, state: c.state,
-             phone: c.phone, last: c.last, followUp: c.followUp, status: c.status, disputed: c.disputed };
-  });
-  var blob = new Blob([JSON.stringify({ note: loadedNote, customers: out }, null, 2) + "\n"], { type: "application/json" });
-  var a = document.createElement("a");
-  a.href = URL.createObjectURL(blob); a.download = "customers.json";
-  document.body.appendChild(a); a.click(); a.remove();
-  setTimeout(function () { URL.revokeObjectURL(a.href); }, 1000);
-});
-
-function start(doc) {
-  loadedNote = doc.note || "";
-  lsSet("varsha-crm-probe", "1");   // detect blocked storage early
-  loadView();
-  build(doc.customers);
-  syncControls();
-  render();
-}
-var source = window.CRM_DATA ? Promise.resolve(window.CRM_DATA)
-  : fetch("customers.json", { cache: "no-store" }).then(function (r) {
-      if (!r.ok) throw new Error("HTTP " + r.status);
-      return r.json();
-    });
-source.then(start).catch(function (err) {
-  $("empty").hidden = false;
-  $("empty").textContent = "Could not load customers.json (" + err.message + "). Open this page from the website or a local web server, not by double-clicking the file.";
-});
-</script>
+<script src="js/store.js?v=2" defer></script>
+<script src="js/csv.js?v=2" defer></script>
+<script src="js/ui.js?v=2" defer></script>
+<script src="js/importer.js?v=2" defer></script>
+<script src="js/app.js?v=2" defer></script>
+<script src="js/customers.js?v=2" defer></script>
+<script src="js/money.js?v=2" defer></script>
+<script src="js/rfqs.js?v=2" defer></script>
+<script src="js/schedule.js?v=2" defer></script>
+<script src="js/revenue.js?v=2" defer></script>
+<script src="js/report.js?v=2" defer></script>
+<script src="js/dashboard.js?v=2" defer></script>
+<script src="js/export.js?v=2" defer></script>
+<script src="js/boot.js?v=2" defer></script>
 </body>
 </html>
