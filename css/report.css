@@ -19,6 +19,11 @@ dialog.report::backdrop { background: rgba(9, 22, 41, .6); }
 .rp-bar .form-err:empty { display: none; }
 .rp-warn { padding: 8px 12px; border-radius: 8px; background: var(--warn-bg); color: var(--warn); font-size: .85rem; font-weight: 600; }
 
+@media (min-width: 861px) {
+  .rp-bar { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 8px 24px; }
+  .rp-bar .form-err, .rp-bar .rp-warn { flex-basis: 100%; }
+}
+
 /* ---------- the sheet ---------- */
 .rp-scroll { flex: 1; min-height: 0; overflow: auto; padding: 16px 0 32px; }
 #reportPage {
