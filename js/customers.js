@@ -221,7 +221,7 @@
       any = true;
     }
     if (r && r.fytd != null) {
-      td.appendChild(el("div", { class: "money-line rev" }, [el("span", { class: "amt-rev" }, ["FY revenue ", Ui.amountEl(r.fytd)])]));
+      td.appendChild(el("div", { class: "money-line money-rev" }, [el("span", { class: "amt-rev" }, ["FY revenue ", Ui.amountEl(r.fytd)])]));
       any = true;
     }
     if (!any) dash(td);

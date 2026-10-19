@@ -566,6 +566,14 @@ module.exports = async (t) => {
   await mreload();
   check('FY revenue line and its sort survive a refresh', (await text(mrow('NEEL METAL').locator('.amt-rev'))) === 'FY revenue ₹20,00,000' && (await mp.locator('#rows tr').first().locator('.nm').innerText()).startsWith('NEEL METAL'));
 
+  // the largest realistic value renders in full (uses the real CrmRevenue once it is on the branch)
+  await mp.evaluate(async id => {
+    const d = Store.doc('revenue').get();
+    d.rows.push({ invoiceNo: 'T-9', date: '2026-07-06', customerId: id, sourceName: 'ZF', onInvoice: 'ZF', erpGroup: '', taxable: 9876543210 });
+    await Store.doc('revenue').set(d); App.flush();
+  }, ID.zf);
+  check('a very large FY revenue is shown in full', (await text(mrow('ZF STEERING').locator('.amt-rev'))) === 'FY revenue ₹9,87,80,43,210', await text(mrow('ZF STEERING').locator('.amt-rev')));
+
   // dispatch line
   const noDisp = await mp.locator('.ld').count();
   await mp.evaluate(async args => {
@@ -595,13 +603,14 @@ module.exports = async (t) => {
 
   // ===================== layout =====================
   // desktop: the table fits its card with every line and button showing
-  for (const w of [1280, 1180, 1179, 900]) {
+  for (const w of [1440, 1280, 1240, 1212, 1200, 1180, 1179, 1000, 900]) {
     const d = await t.fresh({ viewport: { width: w, height: 900 } });
     await t.open(d.page);
     await t.tab(d.page, 'list');
     await d.page.evaluate(async args => {
-      window.CrmMoney = { has() { return true; }, meta() { return { aging: { asOf: args.d } }; }, forCustomer(id) { return { outstanding: 12345678, overdue: 4560000, shared: null }; }, openImport() {} };
-      window.CrmRevenue = { has() { return true; }, forCustomer() { return { fytd: 98765432 }; } };
+      window.CrmMoney = { has() { return true; }, meta() { return { aging: { asOf: args.d } }; }, forCustomer(id) { return { outstanding: 1234567890, overdue: 456000000, shared: { groupName: 'Sangkaj Industries Private Limited Group', n: 2 } }; }, openImport() {} };
+      if (!window.CrmRevenue) window.CrmRevenue = { has() { return !!Store.doc('revenue').get(); }, forCustomer() { return { fytd: 9876543210 }; } };
+      await Store.doc('revenue').set({ v: 1, meta: { fileName: 'x.csv', firstDate: '2026-07-05', lastDate: '2026-07-05' }, rows: [{ invoiceNo: 'L-1', date: '2026-07-05', customerId: args.zf, sourceName: 'ZF', onInvoice: 'ZF', erpGroup: '', taxable: 9876543210 }] });
       await Store.saveCustomer(args.zf, { group: 'Long Group Name Industries', segment: 'Tier-1', vehicleSegment: 'Off-highway', relatedParty: true,
         plants: [{ name: 'A', city: 'Chakan', state: 'Maharashtra' }, { name: 'B', city: 'Hosur', state: 'Tamil Nadu' }] });
       await Store.addLog(args.zf, { type: 'Call', note: 'x' });

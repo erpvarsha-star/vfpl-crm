@@ -69,7 +69,18 @@ td.money { min-width: 130px; }
 thead th { white-space: normal; }
 th button { display: block; }
 th button + button { margin-top: 2px; }
-@media (min-width: 1180px) { th, td { padding-left: 8px; padding-right: 8px; } td.name { min-width: 150px; } td.money { min-width: 120px; } }
+td, th { overflow-wrap: anywhere; }
+@media (min-width: 1180px) {
+  th, td { padding-left: 6px; padding-right: 6px; }
+  td.name { min-width: 130px; }
+  td.money { min-width: 110px; }
+  td a { font-size: .92rem; }
+  .fu input { width: 134px; font-size: .85rem; padding: 6px; }
+  select.st { padding: 6px 26px 6px 10px; }
+  td[data-label="Phone"] a { white-space: nowrap; }
+  td[data-label="Contact person"] { min-width: 90px; }
+  td[data-label="Last order"] { min-width: 86px; }
+}
 th button.th-sub, #sortDispatch, #sortRevenue { font-weight: 600; opacity: .85; }
 .bar.filters { gap: 10px 14px; }
 .fsel { display: flex; align-items: center; gap: 8px; font-size: .8rem; font-weight: 700; color: var(--ink-dim); }
