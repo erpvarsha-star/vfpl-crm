@@ -842,7 +842,7 @@
     if (st.rows.length) {
       var internal = st.files.reduce(function (n, x) { return n + (x.internal || 0); }, 0);
       $("leadStageMsg").textContent = st.rows.length + " row" + (st.rows.length === 1 ? "" : "s") + " staged from " + st.files.length + " file" + (st.files.length === 1 ? "" : "s") +
-        (internal ? " (" + internal + " internal skipped)" : "") + ". Nothing becomes a lead until you review and merge.";
+        (internal ? " (" + internal + " internal skipped: internal / related entity)" : "") + ". Nothing becomes a lead until you review and merge.";
     }
     $("leadFoot").textContent = summary();
     saveState();
