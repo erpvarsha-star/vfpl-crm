@@ -936,7 +936,6 @@
     $("leadBucketHint").hidden = !(l && l.bucket && l.bucket_guessed);
     if (l && l.bucket && l.bucket_guessed) $("leadBucketHint").textContent = "This bucket was guessed when the sheet was imported. Change it if it is wrong.";
     $("leadErr").hidden = true;
-    ["leadCtxCount", "leadAngCount", "leadStrCount"].forEach(function () {});
     ["context", "value_angle", "strategy"].forEach(function (k) { fe[k].dispatchEvent(new Event("input")); });
   }
   function openNewDialog(prefill, opener) {
