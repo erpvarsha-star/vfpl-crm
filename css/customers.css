@@ -45,8 +45,89 @@ select.st:focus-visible { outline: 3px solid var(--orange); outline-offset: 2px;
 .empty { padding: 40px 16px; text-align: center; color: var(--ink-dim); }
 .foot { margin-top: 16px; font-size: .85rem; color: var(--ink-dim); }
 
-/* ---------- phone: rows become cards ---------- */
-@media (max-width: 860px) {
+/* ---------- A2: tags, last contacted, actions, money ---------- */
+td.name .nm { overflow-wrap: anywhere; }
+.tag-rel { display: inline-block; margin-left: 8px; font-size: .72rem; font-weight: 700; padding: 1px 7px; border-radius: 6px; border: 1.5px solid var(--ink-dim); color: var(--ink-dim); vertical-align: middle; }
+.tags { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+.tag-btn { font: inherit; font-size: .75rem; font-weight: 700; padding: 2px 9px; border-radius: 999px; border: 1.5px solid var(--navy); background: transparent; color: var(--navy); cursor: pointer; overflow-wrap: break-word; text-align: left; line-height: 1.3; }
+.tag-btn:hover { background: var(--navy); color: #fff; }
+.tag-btn:focus-visible, .th-link:focus-visible, .drawer-x:focus-visible { outline: 3px solid var(--orange); outline-offset: 2px; }
+.lc { margin-top: 4px; font-size: .8rem; font-weight: 600; color: var(--ink-dim); }
+.ld { margin-top: 3px; font-size: .8rem; font-weight: 600; color: var(--ink-dim); }
+.badge-lite { display: inline-block; margin-left: 6px; padding: 1px 7px; border-radius: 999px; background: #e6edf8; color: var(--navy); font-size: .72rem; font-weight: 700; white-space: nowrap; cursor: help; }
+td.plants-cell { display: none; }
+.plant-list { list-style: none; display: grid; gap: 2px; font-size: .85rem; text-align: right; }
+.acts { display: flex; flex-wrap: wrap; gap: 6px; justify-content: flex-end; }
+.badge { display: inline-block; min-width: 20px; margin-left: 6px; padding: 1px 6px; border-radius: 999px; background: var(--navy); color: #fff; font-size: .75rem; text-align: center; }
+.btn-sm:hover { border-color: var(--navy); }
+td.money { min-width: 130px; }
+.money-line { font-size: .9rem; line-height: 1.35; }
+.money-line + .money-line { margin-top: 2px; }
+.amt-over { color: var(--risk); font-weight: 800; }
+.amt-none, .amt-rev { color: var(--ink-dim); font-weight: 600; font-size: .82rem; }
+.th-link { all: unset; cursor: pointer; margin-top: 2px; font-size: .7rem; text-decoration: underline; text-transform: none; letter-spacing: 0; }
+thead th { white-space: normal; }
+th button { display: block; }
+th button + button { margin-top: 2px; }
+td, th { overflow-wrap: anywhere; }
+@media (min-width: 1180px) {
+  th, td { padding-left: 6px; padding-right: 6px; }
+  td.name { min-width: 130px; }
+  td.money { min-width: 110px; }
+  td a { font-size: .92rem; }
+  .fu input { width: 134px; font-size: .85rem; padding: 6px; }
+  select.st { padding: 6px 26px 6px 10px; }
+  td[data-label="Phone"] a { white-space: nowrap; }
+  td[data-label="Contact person"] { min-width: 90px; }
+  td[data-label="Last order"] { min-width: 86px; }
+}
+th button.th-sub, #sortDispatch, #sortRevenue { font-weight: 600; opacity: .85; }
+.bar.filters { gap: 10px 14px; }
+.fsel { display: flex; align-items: center; gap: 8px; font-size: .8rem; font-weight: 700; color: var(--ink-dim); }
+.fsel select { width: auto; max-width: 240px; padding: 7px 10px; font-size: .9rem; border-radius: 10px; color: var(--ink); }
+
+/* ---------- A2: dialogs ---------- */
+dialog#dlg { width: min(560px, calc(100vw - 32px)); max-height: calc(100dvh - 32px); }
+dialog#dlg[open], dialog#doneDlg[open] { display: flex; flex-direction: column; }
+dialog#dlg > form, dialog#doneDlg > form { overflow-y: auto; min-height: 0; max-height: calc(100dvh - 120px); }
+.dlg-sub { font-size: .9rem; font-weight: 600; color: var(--ink-dim); overflow-wrap: anywhere; }
+fieldset.sect { border: 0; min-width: 0; display: grid; gap: 12px; padding: 12px 0 0; border-top: 1px solid var(--line); }
+fieldset.sect legend { font-size: .75rem; font-weight: 800; letter-spacing: .1em; text-transform: uppercase; color: var(--ink-dim); padding-right: 8px; }
+label.check { display: flex; align-items: center; gap: 10px; font-weight: 700; }
+label.check input { width: 20px; height: 20px; flex: none; accent-color: var(--navy); }
+.plant-list-edit { display: grid; gap: 12px; }
+.plant-row { display: grid; gap: 6px; padding: 10px; border: 1.5px solid var(--line); border-radius: 10px; }
+.plant-no { font-size: .75rem; font-weight: 800; color: var(--ink-dim); text-transform: uppercase; letter-spacing: .06em; }
+.plant-fields { display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr) minmax(0, 1fr); gap: 8px; }
+.plant-fields input { padding: 8px 10px; font-size: .95rem; }
+.plant-btns { display: flex; flex-wrap: wrap; gap: 8px; justify-content: flex-end; }
+#addPlant { justify-self: start; }
+#addPlant[disabled] { opacity: .5; cursor: not-allowed; }
+.quick { display: flex; flex-wrap: wrap; gap: 8px; }
+textarea { resize: vertical; }
+
+/* ---------- A2: notes drawer ---------- */
+dialog.drawer { margin: 0 0 0 auto; width: min(440px, 100vw); max-width: none; height: 100dvh; max-height: 100dvh; border-radius: 0; }
+dialog.drawer[open] { display: flex; flex-direction: column; }
+.drawer-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.drawer-x { font: inherit; font-size: 1.5rem; line-height: 1; border: 0; background: none; color: #fff; cursor: pointer; padding: 2px 10px; border-radius: 8px; min-width: 44px; min-height: 44px; }
+.drawer-x:hover { background: rgba(255,255,255,.18); }
+dialog.drawer > .dlg-sub { padding: 12px 22px 0; }
+.drawer-body { flex: 1 1 auto; min-height: 0; overflow-y: auto; padding-bottom: 20px; }
+.drawer-body form { padding-bottom: 8px; }
+.log-note { padding: 0 22px; }
+.log-list { list-style: none; margin: 14px 0 0; padding: 0 22px; display: grid; gap: 10px; }
+.log-list li { border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; display: grid; gap: 4px; min-width: 0; }
+.log-head { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; font-size: .85rem; font-weight: 700; }
+.log-head time { color: var(--navy); }
+.log-type { padding: 1px 8px; border-radius: 999px; background: #e6edf8; color: var(--navy); font-size: .75rem; }
+.tag-done { padding: 1px 8px; border-radius: 6px; background: var(--ok-bg); color: var(--ok); font-size: .72rem; font-weight: 800; }
+.log-text { white-space: pre-wrap; overflow-wrap: anywhere; font-size: .95rem; }
+.log-next { font-size: .8rem; color: var(--ink-dim); font-weight: 600; }
+.empty-note { padding: 18px 22px; color: var(--ink-dim); text-align: center; }
+
+/* ---------- narrower than the full table needs (about 1180px): rows become cards ---------- */
+@media (max-width: 1179px) {
   thead { display: none; }
   table, tbody, tr, td { display: block; width: 100%; }
   tbody tr { padding: 14px 16px; }
@@ -63,4 +144,23 @@ select.st:focus-visible { outline: 3px solid var(--orange); outline-offset: 2px;
   td.act::before { content: none; }
   .fu { align-items: flex-end; }
   .search { max-width: none; margin-left: 0; flex-basis: 100%; }
+  td.act { justify-content: flex-start; }
+  .acts { justify-content: flex-start; }
+  td.plants-cell { display: flex; align-items: flex-start; }
+  td.plants-cell .plant-list { text-align: right; }
+  .cv { text-align: right; min-width: 0; overflow-wrap: anywhere; }
+  .badge-lite { display: none; }
+  td.money { display: block; min-width: 0; }
+  td.money::before { display: block; margin-bottom: 2px; }
+  td.money .money-line { text-align: left; }
+}
+/* ---------- phone ---------- */
+@media (max-width: 860px) {
+  .fsel { flex: 1 1 100%; flex-direction: column; align-items: stretch; gap: 4px; }
+  .fsel select { width: 100%; max-width: none; }
+  .plant-fields { grid-template-columns: 1fr; }
+  dialog.drawer { width: 100vw; }
+  dialog.drawer > .dlg-sub { padding: 12px 16px 0; }
+  .log-list { padding: 0 16px; }
+  .log-note { padding: 0 16px; }
 }
