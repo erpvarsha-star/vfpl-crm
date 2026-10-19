@@ -545,9 +545,9 @@
       ]),
       el("div", { class: "rp-prep", text: "Prepared " + Ui.fmt.date(m.today) })
     ]);
-    var left = el("div", { class: "rp-col" }, [secFollow(m), m.money ? secMoney(m) : null, m.lateOrders ? secOrders(m) : null, m.revenue ? secRevenue(m) : null]);
-    var right = el("div", { class: "rp-col" }, [secContact(m), secRisk(m), secLeads(m)]);
-    return el("div", { class: "rp-body" }, [head, boxes(m), secRfq(m), el("div", { class: "rp-grid" }, [left, right]), secActions(m), footer(m)]);
+    // sections flow into two balanced columns (CSS columns), so a long list on one side does not waste room on the other
+    var grid = el("div", { class: "rp-grid" }, [secFollow(m), secContact(m), m.money ? secMoney(m) : null, secRisk(m), m.lateOrders ? secOrders(m) : null, secLeads(m), m.revenue ? secRevenue(m) : null]);
+    return el("div", { class: "rp-body" }, [head, boxes(m), secRfq(m), grid, secActions(m), footer(m)]);
   }
 
   /* ---------- render and fit to one A4 page ---------- */
@@ -676,7 +676,7 @@
     parts.contacts.addEventListener("change", render);
     parts.print.addEventListener("click", doPrint);
     parts.close.addEventListener("click", function () { Ui.closeDialog(dlg); });
-    dlg.addEventListener("close", function () { endPrint(); current = null; });
+    dlg.addEventListener("close", function () { if (dlg.open) return; endPrint(); current = null; });   // a stale close event can arrive after a quick reopen
     if (window.App && App.onData) App.onData(function () { if (dlg.open) render(); });
   }
 
