@@ -48,7 +48,7 @@ module.exports = async (t) => {
 
   // sorting by name
   await page.click('th button[data-sort="name"]');
-  const first = (await page.locator('#rows tr').first().locator('td.name').innerText());
+  const first = (await page.locator('#rows tr').first().locator('td.name .nm').innerText());
   check('sort by name puts the first name first', first === [...data.customers.map(c => c.name)].sort((a, b) => a.toLowerCase().localeCompare(b.toLowerCase()))[0], first);
 
   // status by hand survives a refresh
