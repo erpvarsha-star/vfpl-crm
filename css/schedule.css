@@ -65,6 +65,11 @@ button.day.today .dnum { box-shadow: 0 0 0 2px var(--orange); border-radius: 999
 
 /* ---------- orders and dispatch tables ---------- */
 .sch-table th, .sch-table td { vertical-align: top; }
+.sch-table thead th { white-space: nowrap; }
+.sch-table th, .sch-table td { padding-left: 10px; padding-right: 10px; }
+.card > .sch-table { min-width: 0; }
+#dispatchByCustomer td:nth-child(n+2), #dispatchByPart td:nth-child(n+2) { white-space: nowrap; }
+#dispatchByCustomer td:nth-child(6) { white-space: normal; }
 .sch-table td.name { font-weight: 700; }
 .sch-rowlate td { background: #fff5f4; }
 .sch-ostate { font-weight: 800; }
@@ -83,11 +88,18 @@ button.day.today .dnum { box-shadow: 0 0 0 2px var(--orange); border-radius: 999
 .sch-parts li { display: flex; flex-wrap: wrap; gap: 4px 16px; font-size: .88rem; }
 .sch-pcode { font-weight: 800; min-width: 90px; }
 
-.sch-unmbox { padding: 12px 14px; margin-bottom: 12px; overflow: visible; }
-.sch-unmbox h3 { font-size: .9rem; color: var(--navy); }
-.sch-unm { list-style: none; display: grid; gap: 8px; margin-top: 8px; }
-.sch-unm li { display: grid; gap: 6px; padding: 8px; border: 1px solid var(--line); border-radius: 8px; }
-.sch-unmname { font-weight: 700; overflow-wrap: anywhere; }
+.sch-match { font-size: .9rem; font-weight: 600; color: var(--ink-dim); margin-bottom: 6px; }
+.sch-match.sch-warnline { color: var(--warn); }
+.sch-unmbox { margin-bottom: 10px; overflow: visible; }
+.sch-unmtog { all: unset; box-sizing: border-box; width: 100%; display: block; padding: 9px 14px; font-size: .9rem; font-weight: 700; color: var(--navy); cursor: pointer; }
+.sch-unmtog:focus-visible { outline: 3px solid var(--orange); outline-offset: -3px; border-radius: 12px; }
+.sch-link { text-decoration: underline; color: var(--navy); }
+.sch-unmbody { padding: 0 14px 12px; display: grid; gap: 6px; }
+.sch-unm { list-style: none; display: grid; gap: 4px; }
+.sch-unm li { display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 1.2fr) minmax(0, 2fr) auto; gap: 8px; align-items: center; padding: 4px 0; border-top: 1px solid var(--line); }
+.sch-unm select { padding: 6px 8px; font-size: .9rem; }
+.sch-unmname { font-weight: 700; overflow-wrap: anywhere; font-size: .9rem; }
+.sch-unmn { font-size: .8rem; color: var(--ink-dim); }
 
 .sch-months { list-style: none; display: grid; gap: 4px; padding: 10px; }
 .sch-mbtn { all: unset; box-sizing: border-box; width: 100%; display: grid; grid-template-columns: 76px minmax(0, 1fr) minmax(0, 1.6fr); gap: 10px; align-items: center; padding: 8px 6px; border-radius: 8px; cursor: pointer; font-size: .88rem; }
@@ -110,6 +122,9 @@ button.day.today .dnum { box-shadow: 0 0 0 2px var(--orange); border-radius: 999
   .sch-mtext { grid-column: 1 / 3; }
   .sch-hint { margin-top: 0; }
   .sch-exp td { display: block; }
+  .sch-unm li { grid-template-columns: minmax(0, 1fr); gap: 4px; padding: 8px 0; }
+  .sch-table thead th { white-space: normal; }
+  #dispatchByCustomer td:nth-child(n+2), #dispatchByPart td:nth-child(n+2) { white-space: normal; }
   .sch-inline { flex: 1 1 140px; }
   .sch-inline input, .sch-inline select { flex: 1; width: 100%; }
 }

@@ -217,7 +217,7 @@
   var DEFAULTS = {
     sub: "visits", month: "", wstart: "", day: "", vflag: "", vcust: "", vq: "",
     oflag: "open", ocust: "", oq: "",
-    dview: "customer", dq: "", dfrom: "", dto: "", dslipOff: [], dmeasure: "", dmonth: "", dcust: ""
+    dview: "customer", dq: "", dfrom: "", dto: "", dslipOff: [], dmeasure: "", dmonth: "", dcust: "", dunm: false
   };
   var S = Object.assign({}, DEFAULTS);
   var rootEl = null, mq = null, E = {};
@@ -240,14 +240,14 @@
     if (["late", "today", "week", "open", "all"].indexOf(v.oflag) !== -1) S.oflag = v.oflag;
     ["vcust", "vq", "ocust", "oq", "dq", "dcust"].forEach(function (k) { if (typeof v[k] === "string") S[k] = v[k]; });
     if (["customer", "part", "month"].indexOf(v.dview) !== -1) S.dview = v.dview;
-    S.dfrom = iso(v.dfrom); S.dto = iso(v.dto); S.dmonth = ym(v.dmonth);
+    S.dfrom = iso(v.dfrom); S.dto = iso(v.dto); S.dmonth = ym(v.dmonth); S.dunm = v.dunm === true;
     if (Array.isArray(v.dslipOff)) S.dslipOff = v.dslipOff.filter(function (x) { return typeof x === "string"; });
     if (v.dmeasure === "data" || v.dmeasure === "today") S.dmeasure = v.dmeasure;
   }
   function saveState() { App.setView("schedule", S); }
   function applyFilter(f) {
     f = f || {};
-    var keep = { dview: S.dview, dslipOff: S.dslipOff, dmeasure: S.dmeasure };
+    var keep = { dview: S.dview, dslipOff: S.dslipOff, dmeasure: S.dmeasure, dunm: S.dunm };
     S = Object.assign({}, DEFAULTS, keep);
     var t = today();
     S.sub = SUBS.indexOf(f.sub) !== -1 ? f.sub : (f.oflag ? "orders" : "visits");
@@ -728,22 +728,40 @@
   function typeText(x) { return x.jobSlips === 0 ? "Dispatch" : x.jobSlips === x.slips ? "Jobwork" : "Dispatch and jobwork"; }
   function lastText(d) { return d ? App.fmt.date(d) : "—"; }
 
+  /* How well the customers in the file match the CRM, said plainly, plus a collapsed "Review" panel with the manual match. */
   function renderUnmatched(all) {
-    var box = E.dUnm;
+    var box = E.dUnm, names = {}, order = [], keys = {}, matchedKeys = 0, ignoredKeys = 0, slips = 0;
     Ui.clear(box);
-    var names = {}, order = [];
+    all.forEach(function (r) {
+      if (keys[r.key]) return;
+      keys[r.key] = 1;
+      if (r.matched) matchedKeys++; else if (r.ignored) ignoredKeys++;
+    });
     all.forEach(function (r) {
       if (r.matched || r.ignored) return;
       if (!names[r.source]) { names[r.source] = { qty: 0, slips: 0 }; order.push(r.source); }
-      names[r.source].qty += r.qty; names[r.source].slips++;
+      names[r.source].qty += r.qty; names[r.source].slips++; slips++;
     });
+    var total = Object.keys(keys).length;
+    E.dMatch.textContent = plural(total, "customer", "customers") + " in this file: " + matchedKeys + " matched to CRM customers" +
+      (order.length ? ", " + order.length + " not matched (" + plural(slips, "slip", "slips") + ")" : "") + (ignoredKeys ? ", " + ignoredKeys + " marked as not a CRM customer" : "") + ".";
+    E.dMatch.classList.toggle("sch-warnline", order.length > 0);
     box.hidden = !order.length;
     if (!order.length) return;
-    box.appendChild(el("h3", { text: plural(order.length, "customer name is", "customer names are") + " not matched to a customer" }));
-    box.appendChild(el("p", { class: "note", text: "Pick the customer for each name, or mark it as not a CRM customer. Your choice is remembered for the next import." }));
+    var open = S.dunm === true;
+    var tog = el("button", { type: "button", class: "sch-unmtog", id: "dispatchUnmToggle", "aria-expanded": String(open), "aria-controls": "dispatchUnmList" }, [
+      el("span", { class: "sch-caret", "aria-hidden": "true", text: open ? "▾" : "▸" }),
+      plural(order.length, "name", "names") + " not matched to customers · " + plural(slips, "slip", "slips") + " · ",
+      el("span", { class: "sch-link", text: open ? "Hide" : "Review" })
+    ]);
+    tog.addEventListener("click", function () { S.dunm = !open; renderDispatch(); saveState(); });
+    box.appendChild(tog);
+    if (!open) return;
+    var body = el("div", { class: "sch-unmbody", id: "dispatchUnmList" });
+    body.appendChild(el("p", { class: "note", text: "Pick the customer for each name, or mark it as not a CRM customer. Your choice is remembered for the next import." }));
     var custs = Store.customers().slice().sort(function (a, b) { return a.name.toLowerCase().localeCompare(b.name.toLowerCase()); });
     var ul = el("ul", { class: "sch-unm" });
-    order.slice(0, 25).forEach(function (n) {
+    order.slice(0, 40).forEach(function (n) {
       var sel = el("select", { "aria-label": "Match " + n }, [
         el("option", { value: "?", text: "Choose customer…" }),
         custs.map(function (c) { return el("option", { value: c.id, text: c.name }); }),
@@ -755,10 +773,11 @@
         var map = {}; map[n] = sel.value === "-" ? "" : sel.value;
         Store.setAliases(map).then(function () { App.flush(); App.announce("Saved the match for " + n + "."); });
       });
-      ul.appendChild(el("li", null, [el("span", { class: "sch-unmname", text: n }), el("span", { class: "note", text: plural(names[n].slips, "slip", "slips") + " · " + qtyText(names[n].qty) + " pcs" }), sel, btn]));
+      ul.appendChild(el("li", null, [el("span", { class: "sch-unmname", text: n }), el("span", { class: "sch-unmn", text: plural(names[n].slips, "slip", "slips") + " · " + qtyText(names[n].qty) + " pcs" }), sel, btn]));
     });
-    box.appendChild(ul);
-    if (order.length > 25) box.appendChild(el("p", { class: "note", text: "+" + (order.length - 25) + " more names." }));
+    body.appendChild(ul);
+    if (order.length > 40) body.appendChild(el("p", { class: "note", text: "+" + (order.length - 40) + " more names." }));
+    box.appendChild(body);
   }
 
   function renderSlipChips(all) {
@@ -1228,13 +1247,14 @@
     E.dExtra = el("span", { class: "chip extra-chip", hidden: true }, [E.dExtraLabel, dx]);
     E.dSlips = el("div", { class: "bar", role: "group", "aria-label": "Slip types", id: "dslips" });
     E.dUnm = el("div", { class: "sch-unmbox card", id: "dispatchUnmatched", hidden: true });
+    E.dMatch = el("p", { class: "sch-match", id: "dispatchMatch" });
     E.dSummary = el("p", { class: "note", id: "dispatchSummary" });
     E.dRef = el("p", { class: "note", id: "dispatchRef" });
     E.dBody = el("div", { id: "dispatchBody" });
     E.dMain = el("div", { hidden: true }, [
       el("div", { class: "bar", role: "group", "aria-label": "Dispatch view" }, [E["dv-customer"], E["dv-part"], E["dv-month"]]),
       el("div", { class: "bar sch-filters" }, [E.dQ, el("label", { class: "sch-inline" }, ["From", E.dFrom]), el("label", { class: "sch-inline" }, ["To", E.dTo]), el("label", { class: "sch-inline" }, ["Measure from", E.dMeasure]), E.dExtra]),
-      E.dSlips, E.dUnm, E.dSummary, E.dRef, E.dBody
+      E.dSlips, E.dMatch, E.dUnm, E.dSummary, E.dRef, E.dBody
     ]);
     pd.appendChild(el("div", { class: "bar sch-nav" }, [el("h2", { class: "sch-title", text: "Dispatch history" }), E.dImport, E.dClear]));
     pd.appendChild(E.dThrough);
