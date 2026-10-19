@@ -126,6 +126,29 @@ module.exports = async (t) => {
   let threw = false; try { Store.col('Bad Name'); } catch (e) { threw = true; }
   check('collection names are validated', threw);
 
+  // leads and dispatch registries, lead touches in the call log (design 12.1)
+  check('Store knows the Leads and dispatch collections and documents', ['leads', 'dispatches'].every(n => Store.collectionNames().indexOf(n) !== -1) &&
+    ['lead_staging', 'dispatch_meta', 'internal_entities'].every(n => Store.docNames().indexOf(n) !== -1));
+  check('dispatch_meta is an imported document; leads and dispatches are not in the backup by default',
+    Store.importedDocs().indexOf('dispatch_meta') !== -1 && Store.importedDocs().indexOf('lead_staging') === -1);
+  const lead = (await Store.col('leads').insert({ company: 'Made Up Lead Co', email: 'x@example.invalid' })).row;
+  const lastBefore = Store.lastContacted('nr-industries'), countBefore = Store.logCount('nr-industries'), listBefore = Store.listLog('nr-industries').length;
+  r = await Store.addLeadLog(lead.id, { type: 'Call', note: 'intro call', at: Store.addDays(Store.todayISO(), -1) });
+  check('addLeadLog stores a row with no customer and the lead id', r.ok && r.entry.leadId === lead.id && r.entry.customerId === '' && r.entry.type === 'Call');
+  check('lead log rows stay out of customer Last contacted',
+    Store.lastContacted('nr-industries') === lastBefore && Store.logCount('nr-industries') === countBefore && Store.listLog('nr-industries').length === listBefore &&
+    Store.allLog().some(x => x.leadId === lead.id));
+  await Store.addLeadLog(lead.id, { type: 'Note', note: 'newer note', at: Store.todayISO() });
+  check('leadLog lists the lead\'s touches newest first', eq(Store.leadLog(lead.id).map(x => x.note), ['newer note', 'intro call']));
+  r = await Store.addLeadLog(lead.id, { type: 'Note', note: '  ' });
+  check('addLeadLog refuses an empty note, a future date and an unknown lead',
+    !r.ok && !(await Store.addLeadLog(lead.id, { type: 'Call', note: 'x', at: Store.addDays(Store.todayISO(), 2) })).ok && !(await Store.addLeadLog('nope', { type: 'Call', note: 'x' })).ok);
+  r = await Store.relinkLog(lead.id, 'nr-industries');
+  check('relinkLog moves the lead touches to the customer (a Call now counts as Last contacted; a Note does not)',
+    r.ok && r.moved === 2 && Store.listLog('nr-industries').length === listBefore + 2 && Store.lastContacted('nr-industries') >= Store.addDays(Store.todayISO(), -1));
+  check('relinkLog refuses an unknown customer', !(await Store.relinkLog(lead.id, 'nobody')).ok);
+  check('the backup carries lead log rows in callLog', Store.exportBackup().callLog.some(x => x.leadId === lead.id));
+
   // seed validation
   const bad = JSON.parse(JSON.stringify(data));
   bad.customers[0].segment = 'Whale'; bad.customers[1].segment = 'Nope'; bad.customers[2].plants = [{ name: 'x' }, { city: 'Pune', state: 'MH' }];
