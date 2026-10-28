@@ -16,7 +16,7 @@ Customer tracker for Varsha Forgings. Navy and orange, plain HTML, CSS and JavaS
 - `index.html` - the page. `css/` and `js/` hold one stylesheet and one script per module (`store.js` is the only data layer; `csv.js` and `importer.js` are shared by every import).
 - `customers.json` - the customer list the page starts from. Names, contact people and phones only. No notes, no amounts, no emails.
 - `tests/smoke.js` - the test runner; `tests/unit/` and `tests/checks/` hold the tests.
-- `docs/` - the design documents. `CLAUDE.md` - the project rules.
+- `docs/` - the design documents: [Vision and process flow](docs/Vision_28OCT2026_1900.md), [Owner's guide](docs/UserGuide_28OCT2026_1900.md), [Phase 2 design](docs/Phase2Design_19OCT2026_0446.md), [Expert review](docs/ExpertReview_19OCT2026_0510.md). `CLAUDE.md` - the project rules.
 
 ## Where your data lives
 
