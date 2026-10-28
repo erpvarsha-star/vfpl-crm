@@ -8,7 +8,7 @@ module.exports = async (t) => {
   check('no innerHTML in any js file', jsFiles.length >= 14 && offenders.length === 0, offenders.join());
 
   const html = fs.readFileSync(path.join(root, 'index.html'), 'utf8');
-  check('CSP meta present', /<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self'; base-uri 'none'; form-action 'self'; object-src 'none'">/.test(html));
+  check('CSP meta present', /<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self' https:\/\/script\.google\.com https:\/\/script\.googleusercontent\.com; base-uri 'none'; form-action 'self'; object-src 'none'">/.test(html));
   check('no inline script in index.html', !/<script(?![^>]*\bsrc=)[^>]*>/.test(html));
   const gi = fs.readFileSync(path.join(root, '.gitignore'), 'utf8');
   check('.gitignore ignores csv files, data-private and node_modules', /^\*\.csv$/m.test(gi) && /^data-private\/$/m.test(gi) && /^node_modules\/?$/m.test(gi));

@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self'; base-uri 'none'; form-action 'self'; object-src 'none'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self' https://script.google.com https://script.googleusercontent.com; base-uri 'none'; form-action 'self'; object-src 'none'">
 <title>Varsha CRM</title>
 <link rel="icon" type="image/png" sizes="64x64" href="assets/favicon-64.png">
 <link rel="stylesheet" href="css/base.css?v=2">
@@ -16,6 +16,12 @@
 <link rel="stylesheet" href="css/report.css?v=2">
 <link rel="stylesheet" href="css/dashboard.css?v=2">
 <link rel="stylesheet" href="css/export.css?v=2">
+<link rel="stylesheet" href="css/tasks.css?v=2">
+<link rel="stylesheet" href="css/c360.css?v=2">
+<link rel="stylesheet" href="css/forecast.css?v=2">
+<link rel="stylesheet" href="css/rules.css?v=2">
+<link rel="stylesheet" href="css/sheets.css?v=2">
+<link rel="stylesheet" href="css/search.css?v=2">
 </head>
 <body>
 <div id="app">
@@ -29,6 +35,7 @@
           <div class="date" id="today"></div>
         </div>
       </div>
+      <button class="btn-add" id="openSearch" type="button" aria-label="Search everything (Ctrl+K)">Search</button>
       <button class="btn-add" id="openForm" type="button">+ Add customer</button>
     </div>
   </header>
@@ -41,6 +48,11 @@
       <button class="tab" role="tab" id="tab-leads" aria-controls="panel-leads" aria-selected="false" tabindex="-1">Leads</button>
       <button class="tab" role="tab" id="tab-rfqs" aria-controls="panel-rfqs" aria-selected="false" tabindex="-1">RFQs</button>
       <button class="tab" role="tab" id="tab-schedule" aria-controls="panel-schedule" aria-selected="false" tabindex="-1">Schedule</button>
+      <button class="tab" role="tab" id="tab-tasks" aria-controls="panel-tasks" aria-selected="false" tabindex="-1">Today</button>
+      <button class="tab" role="tab" id="tab-c360" aria-controls="panel-c360" aria-selected="false" tabindex="-1">Accounts</button>
+      <button class="tab" role="tab" id="tab-forecast" aria-controls="panel-forecast" aria-selected="false" tabindex="-1">Forecast</button>
+      <button class="tab" role="tab" id="tab-rules" aria-controls="panel-rules" aria-selected="false" tabindex="-1">Automation</button>
+      <button class="tab" role="tab" id="tab-sheets" aria-controls="panel-sheets" aria-selected="false" tabindex="-1">Sync</button>
       <button class="tab" role="tab" id="tab-export" aria-controls="panel-export" aria-selected="false" tabindex="-1">Export</button>
     </nav>
   </div>
@@ -63,6 +75,11 @@
     <section id="panel-leads" class="tabpanel" role="tabpanel" aria-labelledby="tab-leads" hidden></section>
     <section id="panel-rfqs" class="tabpanel" role="tabpanel" aria-labelledby="tab-rfqs" hidden></section>
     <section id="panel-schedule" class="tabpanel" role="tabpanel" aria-labelledby="tab-schedule" hidden></section>
+    <section id="panel-tasks" class="tabpanel" role="tabpanel" aria-labelledby="tab-tasks" hidden></section>
+    <section id="panel-c360" class="tabpanel" role="tabpanel" aria-labelledby="tab-c360" hidden></section>
+    <section id="panel-forecast" class="tabpanel" role="tabpanel" aria-labelledby="tab-forecast" hidden></section>
+    <section id="panel-rules" class="tabpanel" role="tabpanel" aria-labelledby="tab-rules" hidden></section>
+    <section id="panel-sheets" class="tabpanel" role="tabpanel" aria-labelledby="tab-sheets" hidden></section>
     <section id="panel-export" class="tabpanel" role="tabpanel" aria-labelledby="tab-export" hidden></section>
   </main>
 </div>
@@ -82,6 +99,12 @@
 <script src="js/report.js?v=2" defer></script>
 <script src="js/dashboard.js?v=2" defer></script>
 <script src="js/export.js?v=2" defer></script>
+<script src="js/tasks.js?v=2" defer></script>
+<script src="js/c360.js?v=2" defer></script>
+<script src="js/forecast.js?v=2" defer></script>
+<script src="js/rules.js?v=2" defer></script>
+<script src="js/sheets.js?v=2" defer></script>
+<script src="js/search.js?v=2" defer></script>
 <script src="js/boot.js?v=2" defer></script>
 </body>
 </html>

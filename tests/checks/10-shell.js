@@ -7,7 +7,7 @@ module.exports = async (t) => {
   check('first visit opens the Dashboard tab',
     (await page.getAttribute('#tab-dash', 'aria-selected')) === 'true' && await page.locator('#panel-dash').isVisible() && await page.locator('#panel-list').isHidden());
   const labels = await page.locator('nav.tabs[role=tablist] [role=tab]').allInnerTexts();
-  check('tab order is Dashboard, Customers, Leads, RFQs, Schedule, Export', labels.join(', ') === 'Dashboard, Customers, Leads, RFQs, Schedule, Export', labels.join(', '));
+  check('tab order is Dashboard, Customers, Leads, RFQs, Schedule, Today, Accounts, Forecast, Automation, Sync, Export', labels.join(', ') === 'Dashboard, Customers, Leads, RFQs, Schedule, Today, Accounts, Forecast, Automation, Sync, Export', labels.join(', '));
 
   await t.tab(page, 'list');
   await t.reload(page);
