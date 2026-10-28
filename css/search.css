@@ -1,1 +1,15 @@
-/* Search: scope by #cmdk */
+/* Global search / command palette. Every rule is scoped by #cmdk or #openSearch. */
+#openSearch { cursor: pointer; }
+#cmdk { margin: auto; padding: 0; border: 1px solid var(--line, #cbd5e1); border-radius: 12px; width: min(560px, calc(100vw - 24px)); max-width: calc(100vw - 24px); background: var(--card, #fff); color: var(--text, #0b1f3a); box-sizing: border-box; }
+#cmdk[open] { display: block; }
+#cmdk::backdrop { background: rgba(11, 31, 58, .55); }
+#cmdk .cmdk-in { width: 100%; box-sizing: border-box; border: 0; border-bottom: 1px solid var(--line, #cbd5e1); padding: 14px 16px; font: inherit; font-size: 16px; background: transparent; color: inherit; outline: none; }
+#cmdk .cmdk-in:focus-visible { box-shadow: inset 0 -3px 0 var(--orange, #f58220); }
+#cmdk .cmdk-list { max-height: min(60vh, 420px); overflow-y: auto; overflow-x: hidden; margin: 0; padding: 4px 0; list-style: none; }
+#cmdk .cmdk-grp { padding: 8px 16px 2px; font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; color: var(--muted, #475569); }
+#cmdk .cmdk-opt { display: block; padding: 9px 16px; cursor: pointer; overflow-wrap: anywhere; }
+#cmdk .cmdk-opt small { display: block; color: var(--muted, #475569); }
+#cmdk .cmdk-opt[aria-selected="true"] { background: var(--navy, #0b1f3a); color: #fff; }
+#cmdk .cmdk-opt[aria-selected="true"] small { color: #e2e8f0; }
+#cmdk .cmdk-foot { display: flex; justify-content: space-between; gap: 8px; padding: 8px 16px; border-top: 1px solid var(--line, #cbd5e1); font-size: 13px; color: var(--muted, #475569); }
+#cmdk .cmdk-empty { padding: 14px 16px; color: var(--muted, #475569); }
