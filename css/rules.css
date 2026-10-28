@@ -1,0 +1,19 @@
+#panel-rules { padding: 16px; max-width: 100%; }
+#panel-rules .rl-head { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; justify-content: space-between; margin-bottom: 8px; }
+#panel-rules .rl-head h2 { color: var(--ink); }
+#panel-rules .rl-btns { display: flex; flex-wrap: wrap; gap: 8px; }
+#panel-rules .rl-muted { color: var(--ink-dim); font-size: .9rem; margin: 6px 0; }
+#panel-rules .rl-list { list-style: none; display: grid; gap: 10px; margin: 12px 0; }
+#panel-rules .rl-item { display: flex; flex-wrap: wrap; gap: 10px 14px; align-items: center; background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 12px; }
+#panel-rules .rl-on { display: flex; align-items: center; gap: 6px; font-weight: 700; color: var(--navy); min-height: 36px; }
+#panel-rules .rl-toggle { width: 22px; height: 22px; accent-color: var(--navy); }
+#panel-rules .rl-body { display: grid; gap: 2px; flex: 1 1 200px; min-width: 0; }
+#panel-rules .rl-name { color: var(--ink); overflow-wrap: anywhere; }
+#panel-rules .rl-desc { color: var(--ink-dim); font-size: .9rem; overflow-wrap: anywhere; }
+#panel-rules .rl-form, #panel-rules .rl-log { padding: 14px; margin: 12px 0; }
+#panel-rules .rl-form label { display: grid; gap: 4px; margin: 8px 0; font-weight: 600; color: var(--ink); }
+#panel-rules .rl-form input, #panel-rules .rl-form select { font: inherit; padding: 9px; border: 1.5px solid var(--line); border-radius: 8px; max-width: 100%; }
+#panel-rules .rl-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+#panel-rules .rl-err { color: var(--risk); font-weight: 700; min-height: 1em; }
+#panel-rules .rl-sum { font-weight: 800; color: var(--navy); font-size: 1.1rem; }
+#panel-rules .rl-created { margin: 8px 0 0 18px; color: var(--ink); overflow-wrap: anywhere; }
